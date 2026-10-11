@@ -10,6 +10,16 @@ import {
   parseConfig,
   termColors,
   buildHistory,
+  GRAPH_MAX_NODES,
+  HARD_MAX_ENTRIES,
+  MAX_ENTRIES,
+  clean,
+  clip,
+  esc,
+  limitTree,
+  mergeMeta,
+  nextId,
+  trimEntries,
   graphAlt,
   touchedTag,
   unlinkedCount,
@@ -177,6 +187,89 @@ test('the tree shows the reach of an invalidated assumption, the active path, fo
   expect(svg).toContain('⚠A1')
   expect(svg).toContain('not linked into the tree')
   expect(graphAlt(full, 1)).toContain('affected by invalidated A1')
+})
+
+test('text is stripped of control and bidi characters and cut by code point, so SVG stays well formed', async () => {
+  const dirty = 'a\u0000b\u001b[31m\u202Ec\ud800d\u007f e\u200bf'
+  expect(clean(dirty)).toBe('ab[31mcd ef')
+  expect(clip('😀😀😀', 2)).toBe('😀…')
+  expect(clip('😀😀', 5)).toBe('😀😀')
+  expect(clean('x'.repeat(199) + '😀' + 'tail', 200)).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/)
+  expect(esc('<\u0000&\u202E>')).toBe('&lt;&amp;&gt;')
+  const a = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'Goal \u0000\u202E<x>' }, { kind: 'step', text: 'S\u001b' + '😀'.repeat(300) }] }), STAMP)
+  const svg = graphSvg(buildGraph(a.entries))
+  expect(svg).not.toMatch(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u202a-\u202e]/)
+  expect(svg).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/)
+})
+
+test('ids stay unique when two writers hold the same counter, and counters merge by maximum', async () => {
+  const a = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'assumption', text: 'First' }] }), STAMP)
+  // A second writer still holding the old counter, but reading the entries the first one wrote.
+  const b = applyCall(DEFAULT_META, a.entries, parseCall({ add: [{ kind: 'assumption', text: 'Second' }] }), STAMP)
+  expect(b.added[0]?.id).toBe('A2')
+  expect(nextId(DEFAULT_META, 'assumption', a.entries).id).toBe('A2')
+  expect(mergeMeta(a.meta, b.meta).seq.assumption).toBe(2)
+  expect(mergeMeta({ ...DEFAULT_META, reportedAt: 5 }, { ...DEFAULT_META, reportedAt: 3 }).reportedAt).toBe(5)
+})
+
+test('parallel ledger calls keep every entry and give each its own id', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const calls = ['One', 'Two', 'Three', 'Four'].map(text => $.tool.call({ tool: TOOL, add: [{ kind: 'assumption', text }] } as never))
+  const ran = await Promise.all(calls)
+  const ids = ran.map(r => String((r as { result?: unknown }).result).match(/Logged (A\d+)/)?.[1])
+  expect(new Set(ids).size).toBe(4)
+  const ui = await $.ui.mount({ plugin: 'intent-ledger', surface: 'terminal', component: 'Pane', requestId: 'intent-ledger', props: PANE_PROPS })
+  const drawn = JSON.stringify(await ui.drawn())
+  for (const text of ['One', 'Two', 'Three', 'Four']) expect(drawn).toContain(text)
+  await ui.unmount()
+})
+
+test('a repeat is a duplicate only while the first is unsettled and by the same writer; a repeat may add its link', async () => {
+  const first = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'step', text: 'Run tests' }, { kind: 'step', text: 'Parent' }] }), STAMP)
+  const again = applyCall(first.meta, first.entries, parseCall({ add: [{ kind: 'step', text: 'Run tests', of: 'S2' }] }), STAMP)
+  expect(again.entries.length).toBe(2)
+  expect(again.entries.find(e => e.id === 'S1')?.of).toBe('S2')
+  const done = applyCall(again.meta, again.entries, parseCall({ resolve: [{ id: 'S1', status: 'done' }] }), STAMP)
+  const rerun = applyCall(done.meta, done.entries, parseCall({ add: [{ kind: 'step', text: 'Run tests' }] }), STAMP)
+  expect(rerun.entries.length).toBe(3)
+  const other = applyCall(rerun.meta, rerun.entries, parseCall({ add: [{ kind: 'step', text: 'Run tests' }] }), { ...STAMP, who: 'sub·abc12' })
+  expect(other.entries.length).toBe(4)
+})
+
+test('trimming keeps the goal, re-parents children of what it drops, and is bounded even when all is open', async () => {
+  const base = { why: '', confidence: null, status: 'open' as const, source: 'agent' as const, who: 'main', turn: 1, at: 1, updatedAt: 1, note: '', resolvedBy: null, ref: null, of: null, closedTurn: null }
+  const goal = { ...base, id: 'G1', kind: 'goal' as const, text: 'goal', status: 'done' as const }
+  const settledParent = { ...base, id: 'S1', kind: 'step' as const, text: 'parent', status: 'done' as const, of: 'G1' }
+  const child = { ...base, id: 'A1', kind: 'assumption' as const, text: 'child', of: 'S1' }
+  const filler = Array.from({ length: MAX_ENTRIES + 20 }, (_, i) => ({ ...base, id: `S${i + 10}`, kind: 'step' as const, text: `done ${i}`, status: 'done' as const, of: 'G1' }))
+  const trimmed = trimEntries([goal, settledParent, child, ...filler])
+  expect(trimmed.length).toBeLessThanOrEqual(MAX_ENTRIES)
+  expect(trimmed.some(e => e.id === 'G1')).toBe(true)
+  const ids = new Set(trimmed.map(e => e.id))
+  expect(trimmed.every(e => e.of === null || ids.has(e.of))).toBe(true)
+
+  const allOpen = Array.from({ length: HARD_MAX_ENTRIES + 50 }, (_, i) => ({ ...base, id: `A${i + 1}`, kind: 'assumption' as const, text: `open ${i}` }))
+  expect(trimEntries(allOpen).length).toBeLessThanOrEqual(HARD_MAX_ENTRIES)
+})
+
+test('user marks are reported once, and a big tree folds to a bound while keeping the active step', async () => {
+  const a = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'assumption', text: 'Guess' }] }), { ...STAMP, at: 1000 })
+  const marked = a.entries.map(e => ({ ...e, status: 'confirmed' as const, resolvedBy: 'you' as const, updatedAt: 1500 }))
+  expect(toolReply({ ...a, added: [], changed: [], problems: [] }, marked, 1000)).toContain('Marked by the user')
+  expect(toolReply({ ...a, added: [], changed: [], problems: [] }, marked, 2000)).not.toContain('Marked by the user')
+
+  const steps = Array.from({ length: 60 }, (_, i) => ({ kind: 'step', text: `Step ${i}` }))
+  const t = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'G' }, ...steps] }), STAMP)
+  const active = applyCall(t.meta, t.entries, parseCall({ resolve: [{ id: 'S60', status: 'active' }] }), STAMP).entries
+  const tree = buildGraph(active)
+  const total = (n: (typeof tree)[number]): number => 1 + n.children.reduce((x, c) => x + total(c), 0)
+  expect(tree.reduce((x, r) => x + total(r), 0)).toBeLessThanOrEqual(GRAPH_MAX_NODES)
+  expect(graphLines(tree).some(l => l.entry.id === 'S60')).toBe(true)
+  expect(tree[0]?.hidden).toBeGreaterThan(0)
+  expect(buildGraph(active, false)[0]?.children.length).toBe(60)
+  const deep = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'G' }, { kind: 'step', text: 'a' }, { kind: 'step', text: 'b', of: '@2' }, { kind: 'step', text: 'c', of: '@3' }, { kind: 'step', text: 'd', of: '@4' }, { kind: 'step', text: 'e', of: '@5' }, { kind: 'step', text: 'f', of: '@6' }, { kind: 'assumption', text: 'deep', of: '@7' }] }), STAMP)
+  expect(unlinkedCount(deep.entries)).toBe(0)
+  limitTree([], 1)
 })
 
 test('a cycle or a dropped parent never loops or resurrects a branch', async () => {
