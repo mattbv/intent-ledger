@@ -22,6 +22,12 @@ import {
   mergeMeta,
   nextId,
   trimEntries,
+  activityByTurn,
+  ageLevel,
+  healthParts,
+  isFresh,
+  progressBar,
+  sparkline,
   graphAlt,
   touchedTag,
   unlinkedCount,
@@ -274,6 +280,41 @@ test('user marks are reported once, and a big tree folds to a bound while keepin
   limitTree([], 1)
 })
 
+test('small visuals: progress bar, sparkline, activity, age, freshness, health strip and the fresh bar in the SVG', async () => {
+  expect(progressBar(0, 5)).toBe('▱▱▱▱▱▱▱▱')
+  expect(progressBar(2, 5)).toBe('▰▰▰▱▱▱▱▱')
+  expect(progressBar(1, 100)).toBe('▰▱▱▱▱▱▱▱')
+  expect(progressBar(99, 100)).toBe('▰▰▰▰▰▰▰▱')
+  expect(progressBar(5, 5)).toBe('▰▰▰▰▰▰▰▰')
+  expect(progressBar(0, 0)).toBe('')
+  expect(sparkline([0, 1, 4, 8])).toBe('·▁▄█')
+  expect(sparkline([])).toBe('')
+  expect(sparkline([0, 0])).toBe('··')
+  expect(ageLevel(0, 3)).toBe(0)
+  expect(ageLevel(2, 3)).toBe(1)
+  expect(ageLevel(3, 3)).toBe(2)
+  expect(ageLevel(9, 0)).toBe(0)
+
+  const a = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'G' }, { kind: 'step', text: 'One' }, { kind: 'assumption', text: 'Maybe' }] }), { ...STAMP, turn: 1 })
+  const b = applyCall(a.meta, a.entries, parseCall({ resolve: [{ id: 'S1', status: 'done' }] }), { ...STAMP, at: 5000, turn: 2 })
+  const list = withClosedTurns(a.entries, b.entries, 2)
+  expect(activityByTurn(list, [1, 2])).toEqual([3, 1])
+  const turn = { n: 2, startedAt: 4000, logged: 0, edits: [], isRunning: false }
+  expect(list.filter(e => isFresh(e, turn)).map(e => e.id)).toEqual(['S1'])
+  expect(isFresh(list[0]!, { ...turn, n: 0 })).toBe(false)
+  expect(isFresh(list[0]!, { ...turn, startedAt: 0 })).toBe(false)
+
+  const parts = healthParts({ open: 2, confirmed: 1, invalidated: 1, stale: 1, stepsDone: 2, steps: 5, questions: 1, risks: 1 })
+  expect(parts.map(p => p.text)).toEqual(['2 open', '⚠ 1 stale', '✗ 1', '✓ 1', '▰▰▰▱▱▱▱▱ 2/5', '? 1', '! 1'])
+  expect(healthParts({ open: 0, confirmed: 0, invalidated: 0, stale: 0, stepsDone: 0, steps: 0, questions: 0, risks: 0 })).toEqual([])
+  expect(healthParts({ open: 0, confirmed: 0, invalidated: 0, stale: 0, stepsDone: 3, steps: 3, questions: 0, risks: 0 })[0]?.tone).toBe('success')
+
+  const svg = graphSvg(buildGraph(list), 480, undefined, 0, new Set(['S1']))
+  expect(svg.match(/rx="1\.5"/g)?.length).toBe(1)
+  expect(graphAlt(buildGraph(list, false), 0, new Set(['S1']))).toContain('changed this turn')
+  expect(graphSvg(buildGraph(list)).match(/rx="1\.5"/g)).toBe(null)
+})
+
 test('a cycle or a dropped parent never loops or resurrects a branch', async () => {
   const a = applyCall(
     DEFAULT_META,
@@ -398,6 +439,8 @@ test('the ledger tool records entries and the pane draws them on every surface t
     expect(drawn.indexOf('PLAN')).toBeLessThan(drawn.indexOf('STRUCTURE'))
     expect(drawn.indexOf('STRUCTURE')).toBeLessThan(drawn.indexOf('TIMELINE'))
     expect(drawn).toContain('press a row to confirm or correct it')
+    expect(drawn).toContain('1 open')
+    expect(drawn).toContain('▱')
     expect(drawn).toContain('STRUCTURE')
     // The terminal draws the tree as text; the remote surfaces draw it as an SVG.
     expect(drawn).toContain(surface === 'terminal' ? '└─' : '<svg')

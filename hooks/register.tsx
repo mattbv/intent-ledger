@@ -23,7 +23,13 @@ import {
   buildGraph,
   buildHistory,
   SVG_WIDTH,
+  activityByTurn,
+  ageLevel,
   graphAlt,
+  healthParts,
+  isFresh,
+  progressBar,
+  sparkline,
   unlinkedCount,
   graphSvg,
   historyAlt,
@@ -357,6 +363,9 @@ export const register: Register = (on, options) => {
     const pal = paletteOf(cfg.palette)
     const K = termColors(pal, cfg.brandAccent)
     const accent = K.accent
+    // A one-column gutter marks what changed since your last prompt.
+    const freshIds = new Set(list.filter(x => isFresh(x, t)).map(x => x.id))
+    const gut = (id: string) => <Text bold color={accent}>{freshIds.has(id) ? '▎' : ' '}</Text>
     const header = (label: string, extra: string) => (
       <Box flexDirection="row">
         <Text bold color={accent}>{label}</Text>
@@ -389,18 +398,21 @@ export const register: Register = (on, options) => {
       const glyph = a.status === 'open' ? '?' : a.status === 'confirmed' ? '✓' : a.status === 'invalidated' ? '✗' : '–'
       const color = a.status === 'open' ? K.warning : a.status === 'confirmed' ? K.success : a.status === 'invalidated' ? K.error : K.inactive
       const stale = isStale(a, t.n, cfg.staleAfterTurns)
-      const metaBits = [a.confidence ?? '', `T${a.turn}`, a.who !== 'main' ? a.who : '', a.resolvedBy === 'you' ? 'by you' : ''].filter(Boolean).join(' · ')
+      const confGlyph = a.confidence === 'high' ? '▆' : a.confidence === 'medium' ? '▄' : a.confidence === 'low' ? '▂' : ''
+      const aging = a.status === 'open' && ageLevel(t.n - a.turn, cfg.staleAfterTurns) > 0
+      const metaBits = [a.confidence ? `${confGlyph} ${a.confidence}` : '', `T${a.turn}`, a.who !== 'main' ? a.who : '', a.resolvedBy === 'you' ? 'by you' : ''].filter(Boolean).join(' · ')
       // `stale` leads the claim as a badge so a narrow pane never cuts it off; the chevron says the row opens.
-      const room = Math.max(8, width - metaBits.length - a.id.length - (stale ? 14 : 6) - 2)
+      const room = Math.max(8, width - metaBits.length - a.id.length - (stale ? 14 : 6) - 3)
       const isOpen = v.expanded === a.id
       return (
         <Box flexDirection="column">
           <Button key={`row:${a.id}`} plain onPress={() => toggle(a.id)}>
+            {gut(a.id)}
             <Text color={color}>{glyph} </Text>
             <Text dimColor>{a.id} </Text>
             {stale && <Text color={K.warning} bold>{'stale '}</Text>}
             <Text strikethrough={a.status === 'dropped'}>{shorten(a.text, room)}</Text>
-            <Text color={K.subtle}>{metaBits ? `  ${metaBits}` : ''}</Text>
+            <Text color={aging ? K.warning : K.subtle}>{metaBits ? `  ${metaBits}` : ''}</Text>
             <Text color={K.subtle}>{isOpen ? '  ▾' : '  ▸'}</Text>
           </Button>
           {isOpen && (
@@ -430,6 +442,7 @@ export const register: Register = (on, options) => {
     const timelineShown = graph.length > 1 ? moments.filter(m => m.tone !== 'add') : moments
     const labelWidth = Math.min(24, Math.max(12, width - 12 * HISTORY_CELL - 1))
     const history = buildHistory(list, t.n, Math.max(2, Math.min(12, Math.floor((width - labelWidth - 1) / HISTORY_CELL))))
+    const health = healthParts(c)
     const decisions = list.filter(x => x.kind === 'decision' && x.status !== 'dropped').slice(-4)
     const findings = list.filter(x => x.kind === 'finding' && x.status !== 'dropped').slice(-4)
     const openQs = list.filter(x => (x.kind === 'question' || x.kind === 'risk') && x.status === 'open').slice(-5)
@@ -444,6 +457,14 @@ export const register: Register = (on, options) => {
             <Text wrap="truncate-end">
               <Text color={K.suggestion} bold>{'▸ NOW '}</Text>
               {now.text}
+            </Text>
+          )}
+          {health.length > 0 && (
+            <Text wrap="truncate-end">
+              {/* The loop variable is not `h`: the module's JSX factory is the global `h`. */}
+              {health.map((part, i) => (
+                <Text color={part.tone === 'plain' ? undefined : part.tone === 'warning' ? K.warning : part.tone === 'error' ? K.error : K.success} bold={part.text.startsWith('⚠')}>{`${i > 0 ? ' · ' : ''}${part.text}`}</Text>
+              ))}
             </Text>
           )}
         </Box>
@@ -461,6 +482,7 @@ export const register: Register = (on, options) => {
             {header('OPEN QUESTIONS & RISKS', '')}
             {openQs.map(q => (
               <Text wrap="truncate-end">
+                {gut(q.id)}
                 <Text color={q.kind === 'risk' ? K.error : K.warning}>{q.kind === 'risk' ? '! ' : '? '}</Text>
                 <Text dimColor>{q.id} </Text>
                 {q.text}
@@ -471,9 +493,10 @@ export const register: Register = (on, options) => {
 
         {(stepsShown.length > 0 || approved) && (
           <Box flexDirection="column">
-            {header('PLAN', steps.length > 0 ? `${c.stepsDone}/${c.steps} done` : '')}
+            {header('PLAN', steps.length > 0 ? `${progressBar(c.stepsDone, c.steps)} ${c.stepsDone}/${c.steps} done` : '')}
             {stepsShown.map(s => (
               <Text wrap="truncate-end" dimColor={s.status === 'done'}>
+                {gut(s.id)}
                 <Text color={s.status === 'active' ? K.suggestion : s.status === 'done' ? K.success : K.subtle}>{s.status === 'active' ? '▸ ' : s.status === 'done' ? '✓ ' : '· '}</Text>
                 {s.text}
                 <Text color={K.subtle}>{s.source === 'observed' ? '  todo' : ''}</Text>
@@ -498,6 +521,7 @@ export const register: Register = (on, options) => {
             {header('DECISIONS', '')}
             {decisions.map(d => (
               <Text wrap="truncate-end">
+                {gut(d.id)}
                 <Text dimColor>{d.id} </Text>
                 {d.text}
                 <Text dimColor>{d.why ? ` — ${d.why}` : ''}</Text>
@@ -511,6 +535,7 @@ export const register: Register = (on, options) => {
             {header('FINDINGS', '')}
             {findings.map(f => (
               <Text wrap="truncate-end">
+                {gut(f.id)}
                 <Text color={K.subtle}>• </Text>
                 <Text dimColor>{f.id} </Text>
                 {f.text}
@@ -523,9 +548,10 @@ export const register: Register = (on, options) => {
         {graph.length > 1 && (
           <Box flexDirection="column">
             {header('STRUCTURE', unlinked > 0 ? `${unlinked} unlinked` : '')}
-            {Svg && <Svg source={graphSvg(tree, SVG_WIDTH, pal, unlinked)} alt={graphAlt(buildGraph(list, false), unlinked)} />}
+            {Svg && <Svg source={graphSvg(tree, SVG_WIDTH, pal, unlinked, freshIds)} alt={graphAlt(buildGraph(list, false), unlinked, freshIds)} />}
             {!Svg && graph.map(l => (
               <Text wrap="truncate-end" dimColor={(l.entry.status === 'done' || l.entry.status === 'confirmed') && !l.onPath} bold={l.onPath}>
+                {gut(l.entry.id)}
                 <Text color={K.subtle}>{l.prefix}</Text>
                 <Text color={l.entry.status === 'invalidated' ? K.error : l.entry.status === 'active' ? K.suggestion : l.entry.kind === 'goal' ? accent : undefined}>{`${l.glyph} `}</Text>
                 <Text dimColor>{`${l.entry.id} `}</Text>
@@ -539,7 +565,7 @@ export const register: Register = (on, options) => {
 
         {history.turns.length > 1 && history.rows.length > 1 && (
           <Box flexDirection="column">
-            {header('HISTORY', `T${history.turns[0]}–T${history.turns[history.turns.length - 1]}${history.turns[0] > 1 ? ` · last ${history.turns.length}` : ''}`)}
+            {header('HISTORY', `T${history.turns[0]}–T${history.turns[history.turns.length - 1]}${history.turns[0] > 1 ? ` · last ${history.turns.length}` : ''}  ${sparkline(activityByTurn(list, history.turns))}`)}
             {Svg && <Svg source={historySvg(history, pal)} alt={historyAlt(history)} />}
             {!Svg && (
             <Text wrap="truncate-end">

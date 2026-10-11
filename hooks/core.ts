@@ -4,7 +4,7 @@ import type { Confidence, Entry, Footprint, Kind, Meta, Moment, Source, Status, 
 
 export const SCHEMA_VERSION = 1
 /** The plugin's version; keep it equal to `version` in `.claude-plugin/plugin.json` (CI checks). */
-export const VERSION = '0.4.4'
+export const VERSION = '0.4.5'
 export const PLUGIN = 'intent-ledger'
 export const TOOL_NAME = 'ledger'
 export const TOOL = 'mcp__intent-ledger__ledger'
@@ -492,6 +492,55 @@ export function updateTask(entries: Entry[], taskId: string, patch: { status?: s
 
 export type Counts = { open: number; confirmed: number; invalidated: number; stale: number; stepsDone: number; steps: number; questions: number; risks: number }
 
+// ---------------------------------------------------------------- small visuals
+
+/** `▰▰▱▱▱`: `done` of `total`, never full until it is, never empty once something is done. */
+export function progressBar(done: number, total: number, width = 8): string {
+  if (total <= 0) return ''
+  const raw = Math.round((Math.max(0, done) / total) * width)
+  const filled = done >= total ? width : Math.max(done > 0 ? 1 : 0, Math.min(width - 1, raw))
+  return '▰'.repeat(filled) + '▱'.repeat(width - filled)
+}
+
+/** `▁▃█`: one block per value, scaled to the largest; a zero is a dot. */
+export function sparkline(values: number[]): string {
+  const max = Math.max(0, ...values)
+  const blocks = '▁▂▃▄▅▆▇█'
+  return values.map(v => (v <= 0 || max <= 0 ? '·' : blocks[Math.min(7, Math.ceil((v / max) * 8) - 1)]!)).join('')
+}
+
+/** How much happened per turn: entries logged plus entries settled in it. */
+export function activityByTurn(entries: Entry[], turns: number[]): number[] {
+  return turns.map(t => entries.filter(e => e.turn === t).length + entries.filter(e => e.closedTurn === t).length)
+}
+
+/** 0 young, 1 close to going stale, 2 stale (or `after` is 0 and nothing ever goes stale: 0). */
+export function ageLevel(age: number, after: number): 0 | 1 | 2 {
+  if (after <= 0) return 0
+  if (age >= after) return 2
+  return age >= Math.ceil((after * 2) / 3) ? 1 : 0
+}
+
+/** Touched since the current turn started: added or changed since your last prompt. */
+export function isFresh(e: Entry, turn: Turn): boolean {
+  return turn.n > 0 && turn.startedAt > 0 && e.updatedAt >= turn.startedAt
+}
+
+export type HealthPart = { text: string; tone: 'warning' | 'error' | 'success' | 'plain' }
+
+/** The one-line summary at the top of the pane; only what is non-zero. */
+export function healthParts(c: Counts): HealthPart[] {
+  const parts: HealthPart[] = []
+  if (c.open > 0) parts.push({ text: `${c.open} open`, tone: 'warning' })
+  if (c.stale > 0) parts.push({ text: `⚠ ${c.stale} stale`, tone: 'warning' })
+  if (c.invalidated > 0) parts.push({ text: `✗ ${c.invalidated}`, tone: 'error' })
+  if (c.confirmed > 0) parts.push({ text: `✓ ${c.confirmed}`, tone: 'success' })
+  if (c.steps > 0) parts.push({ text: `${progressBar(c.stepsDone, c.steps)} ${c.stepsDone}/${c.steps}`, tone: c.stepsDone === c.steps ? 'success' : 'plain' })
+  if (c.questions > 0) parts.push({ text: `? ${c.questions}`, tone: 'warning' })
+  if (c.risks > 0) parts.push({ text: `! ${c.risks}`, tone: 'error' })
+  return parts
+}
+
 export function isStale(e: Entry, turn: number, after: number): boolean {
   return after > 0 && e.kind === 'assumption' && e.status === 'open' && turn - e.turn >= after
 }
@@ -776,12 +825,12 @@ export function graphLayout(roots: GraphNode[], max = GRAPH_MAX_NODES): GraphIte
 }
 
 /** Alt text for the structure SVG: each entry with its kind, parent and status. */
-export function graphAlt(roots: GraphNode[], unlinked = 0): string {
+export function graphAlt(roots: GraphNode[], unlinked = 0, fresh: ReadonlySet<string> = new Set()): string {
   const items = graphLayout(roots, 400)
   const rows = items.map(it => {
     const parent = it.parentRow === null ? null : items[it.parentRow]?.entry.id
     const hit = it.node.touched.length > 0 ? `, affected by invalidated ${it.node.touched.join(' and ')}` : ''
-    return `${it.entry.id}, ${it.entry.kind}${parent ? ` under ${parent}` : ''}, ${it.entry.status}${hit}: ${it.entry.text}`
+    return `${it.entry.id}, ${it.entry.kind}${parent ? ` under ${parent}` : ''}, ${it.entry.status}${hit}${fresh.has(it.entry.id) ? ', changed this turn' : ''}: ${it.entry.text}`
   })
   return `Structure: ${rows.join('; ')}${unlinked > 0 ? `; ${unlinked} more entries are not linked into the tree` : ''}`
 }
@@ -797,7 +846,7 @@ const ROW = 24
 const INDENT = 22
 
 /** The structure tree as an SVG: a dot per entry coloured by status, elbow edges to its parent. */
-export function graphSvg(roots: GraphNode[], width = SVG_WIDTH, pal: Palette = paletteOf(DEFAULT_PALETTE_ID), unlinked = 0): string {
+export function graphSvg(roots: GraphNode[], width = SVG_WIDTH, pal: Palette = paletteOf(DEFAULT_PALETTE_ID), unlinked = 0, fresh: ReadonlySet<string> = new Set()): string {
   const items = graphLayout(roots)
   const height = items.length * ROW + 16 + (unlinked > 0 ? 20 : 0)
   const x = (depth: number) => 14 + depth * INDENT
@@ -830,6 +879,8 @@ export function graphSvg(roots: GraphNode[], width = SVG_WIDTH, pal: Palette = p
           ? `<rect x="${cx - 5.5}" y="${cy - 5.5}" width="11" height="11" transform="rotate(45 ${cx} ${cy})" fill="${fill}"${ring}/>`
           : `<circle cx="${cx}" cy="${cy}" r="7" fill="${fill}"${ring}/>`
     const mark = e.kind === 'goal' || e.kind === 'decision' ? '' : `<text x="${cx}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${markOn(fill, pal)}">${esc(svgGlyph(e))}</text>`
+    // A thin bar at the card's left edge marks what changed since your last prompt.
+    if (fresh.has(e.id)) parts.push(`<rect x="3" y="${cy - 7}" width="3" height="14" rx="1.5" fill="${pal.accent}"/>`)
     parts.push(shape, mark, `<text class="d" x="${cx + 14}" y="${cy + 4}">${esc(e.id)}</text>`)
     if (tag) parts.push(`<text class="d" x="${idEnd}" y="${cy + 4}" fill="${pal.bad}" style="fill:${pal.bad}">${esc(tag)}</text>`)
     parts.push(`<text class="${dim ? 'd' : 't'}" x="${labelX}" y="${cy + 4}"${it.node.onPath ? ' font-weight="700"' : ''}>${esc(label)}</text>`)
