@@ -6,6 +6,10 @@ import {
   applyCall,
   countsOf,
   buildGraph,
+  buildHistory,
+  graphSvg,
+  historySvg,
+  withClosedTurns,
   fitStatus,
   graphLines,
   parseCall,
@@ -48,6 +52,73 @@ test('the structure graph hangs steps off the goal and links entries through `of
   expect(b.problems.join(' ')).toContain('no entry S99')
   const lines = graphLines(buildGraph(b.entries)).map(l => `${l.prefix}${l.glyph} ${l.entry.id}`)
   expect(lines).toEqual(['◎ G1', '├─ · S1', '└─ · S2', '   ├─ · S3', '   └─ ? A2'])
+})
+
+test('`of: "@N"` links to an entry of the same call, even past a refused or duplicate one', async () => {
+  const a = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'G' }, { kind: 'step', text: 'One' }], }), STAMP)
+  const b = applyCall(
+    a.meta,
+    a.entries,
+    parseCall({
+      add: [
+        { kind: 'nonsense', text: 'refused' },
+        { kind: 'step', text: 'One' },
+        { kind: 'assumption', text: 'Rests on the duplicate', of: '@2' },
+        { kind: 'step', text: 'Two' },
+        { kind: 'decision', text: 'Rests on Two', of: '@4' },
+        { kind: 'risk', text: 'Forward link', of: '@9' },
+      ],
+    }),
+    STAMP,
+  )
+  const link = (id: string) => b.entries.find(e => e.id === id)?.of
+  expect(link('A1')).toBe('S1')
+  expect(link('D1')).toBe('S2')
+  expect(b.problems.join(' ')).toContain('no entry @9')
+})
+
+test('closed turns are stamped once, cleared on reopen, and drawn as a turns grid', async () => {
+  const at = (turn: number) => ({ ...STAMP, turn })
+  const a = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'G' }, { kind: 'step', text: 'One' }, { kind: 'assumption', text: 'Maybe' }] }), at(1))
+  let list = withClosedTurns([], a.entries, 1)
+  expect(list.every(e => e.closedTurn === null)).toBe(true)
+  const b = applyCall(a.meta, list, parseCall({ resolve: [{ id: 'S1', status: 'done' }, { id: 'A1', status: 'invalidated', note: 'nope' }] }), at(3))
+  list = withClosedTurns(list, b.entries, 3)
+  expect(list.find(e => e.id === 'S1')?.closedTurn).toBe(3)
+  const again = withClosedTurns(list, list.map(e => ({ ...e })), 5)
+  expect(again.find(e => e.id === 'S1')?.closedTurn).toBe(3)
+  const reopened = withClosedTurns(list, list.map(e => (e.id === 'S1' ? { ...e, status: 'open' as const } : e)), 4)
+  expect(reopened.find(e => e.id === 'S1')?.closedTurn).toBe(null)
+
+  const grid = buildHistory(list, 4)
+  expect(grid.turns).toEqual([1, 2, 3, 4])
+  const rowOf = (id: string) => grid.rows.find(r => r.entry.id === id)?.cells.map(c => c.trim()).join('|')
+  expect(rowOf('S1')).toBe('○|───|✓|')
+  expect(rowOf('A1')).toBe('○|───|✗|')
+  expect(buildHistory(list, 4, 2).turns).toEqual([3, 4])
+})
+
+test('the SVGs escape entry text, stay bounded and carry the labels', async () => {
+  const a = applyCall(
+    DEFAULT_META,
+    [],
+    parseCall({ add: [{ kind: 'goal', text: 'Fix <b>"quotes"</b> & more' }, { kind: 'step', text: 'One', of: '@1' }, { kind: 'assumption', text: 'Maybe', of: '@2' }, { kind: 'decision', text: 'Pick' }] }),
+    STAMP,
+  )
+  const b = applyCall(a.meta, a.entries, parseCall({ resolve: [{ id: 'S1', status: 'done' }, { id: 'A1', status: 'invalidated' }] }), { ...STAMP, turn: 3 })
+  const list = withClosedTurns(a.entries, b.entries, 3)
+  const tree = graphSvg(buildGraph(list))
+  expect(tree.startsWith('<svg')).toBe(true)
+  expect(tree).toContain('Fix &lt;b&gt;&quot;quotes&quot;&lt;/b&gt; &amp; more')
+  expect(tree).not.toContain('<b>')
+  expect(tree).toContain('S1')
+  const grid = historySvg(buildHistory(list, 3))
+  expect(grid).toContain('A1')
+  expect(grid.endsWith('</svg>')).toBe(true)
+  const many = Array.from({ length: 300 }, (_, i) => ({ kind: 'step', text: `Step number ${i} with a fairly long description to pad the markup` }))
+  const big = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'G' }, ...many] }), STAMP)
+  expect(graphSvg(buildGraph(big.entries)).length).toBeLessThan(131072)
+  expect(historySvg(buildHistory(big.entries, 3)).length).toBeLessThan(131072)
 })
 
 test('a cycle or a dropped parent never loops or resurrects a branch', async () => {
@@ -170,7 +241,9 @@ test('the ledger tool records entries and the pane draws them on every surface t
     expect(drawn).toContain('Use passport over a hand-rolled JWT')
     expect(drawn).toContain('FINDINGS')
     expect(drawn).toContain('STRUCTURE')
-    expect(drawn).toContain('└─')
+    // The terminal draws the tree as text; the remote surfaces draw it as an SVG.
+    expect(drawn).toContain(surface === 'terminal' ? '└─' : '<svg')
+    expect(drawn).not.toContain('HISTORY')
     expect(drawn).toContain('Pane has no background option')
     await ui.unmount()
   }

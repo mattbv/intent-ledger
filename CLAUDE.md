@@ -29,6 +29,7 @@ There is no documented single-test flag; to iterate on one case, narrow it tempo
 ### Invariants worth knowing
 
 - The ledger is built only from what the agent states openly (its tool calls, visible plans, edits). It never reads hidden reasoning and never makes network calls, spawns processes, touches files or calls a model. Keep it that way.
+- `Entry.of` links an entry to what it serves (an id, or `@N` for the Nth entry of the same `add` list, resolved in `applyCall`); `Entry.closedTurn` is stamped by `withClosedTurns` at every site in `register.tsx` that writes entries. `buildGraph`/`graphLines`/`buildHistory` and the SVG builders (`graphSvg`, `historySvg`) are pure and live in `core.ts`; the pane uses Svg only when `e.surface !== 'terminal'`.
 - State lives in session state (`$.state`) and dies with the session; `/clear` resets it.
 - Entry `source` is `agent` | `observed` | `you`. User marks from the pane (confirm / wrong / reopen) are surfaced back to the agent in its next ledger tool result, and "wrong" only drafts text in the user's prompt box; nothing is sent automatically.
 - Status vocabulary differs per kind (see the `Status` doc comment in `types/index.d.ts`).

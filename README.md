@@ -51,6 +51,12 @@ STRUCTURE
    ├─ · S3 Wire the callback route
    └─ ? A3 Sessions can live in memory for now
 
+HISTORY  T1–T4
+                       1  2  3  4
+S1 Read the routes     ○ ───  ✓
+A1 Express 4.x         ○ ───  ✗
+S2 Add a passport…        ○ ─── ───
+
 FINDINGS
 • F1 Pane has no background option — claude-code.d.ts
 
@@ -73,12 +79,15 @@ T5 main changed 3 files with nothing logged (routes.ts, …)
 | **Assumptions** | each with status (`?` open, `✓` confirmed, `✗` invalidated), confidence, the turn it was logged, and a **stale** flag when it has gone unverified for N turns. Open ones sort first |
 | **Plan** | logged steps plus your agent's todo list / task list, read automatically; the plan you approved in plan mode, expandable |
 | **Decisions** | choices between alternatives, with the reason |
-| **Structure** | a tree of the goal, its steps (and sub-steps), and the assumptions, decisions, findings, questions and risks the agent linked to them with `of`. Unlinked steps hang off the goal; other unlinked entries stay in their own sections |
+| **Structure** | a tree of the goal, its steps (and sub-steps), and the assumptions, decisions, findings, questions and risks the agent linked to them with `of` (an id, or `@N` for the Nth entry of the same call). Unlinked steps hang off the goal; other unlinked entries stay in their own sections |
+| **History** | entries against turns: `○` the turn one was logged, `───` while it stayed open, `✓` `✗` `×` the turn it settled (done or confirmed, invalidated, dropped). Shown once entries span two turns |
 | **Findings** | facts the agent learned that settle no assumption (a limit, a cause, a surprise), with where it saw them |
 | **Open questions & risks** | what the agent is deferring or guessing on |
 | **Timeline** | your prompts, every entry logged or resolved, and a warning when a turn **changed files with nothing logged** |
 
 Inline (main-screen terminal), the pane collapses to a few-row summary: goal, assumption counts, the active step and the last few moments. The status line reads e.g. `ledger · 2 open assumptions · 1 stale · 1 ✗ · plan 2/5`.
+
+On the desktop app, VS Code and mobile, the Structure and History sections are drawn as SVG diagrams (a dark card, so they read on any theme); the terminal draws the same data as text.
 
 ### Steering from the pane
 

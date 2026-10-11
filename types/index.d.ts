@@ -35,6 +35,8 @@ export type Entry = {
   ref: string | null
   /** The id of the entry this one serves or rests on (a step's goal or parent step, an assumption's step), or null. */
   of: string | null
+  /** The main-loop turn it reached a settled status (done, confirmed, invalidated, answered, dropped); null while open. */
+  closedTurn: number | null
 }
 
 export type Tone = 'info' | 'add' | 'resolve' | 'warn' | 'you'

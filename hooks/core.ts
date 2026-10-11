@@ -98,6 +98,7 @@ export function normalizeEntry(x: unknown): Entry | null {
     resolvedBy: e.resolvedBy === 'agent' || e.resolvedBy === 'you' || e.resolvedBy === 'observed' ? e.resolvedBy : null,
     ref: typeof e.ref === 'string' ? e.ref : null,
     of: typeof e.of === 'string' && e.of !== e.id ? e.of : null,
+    closedTurn: typeof e.closedTurn === 'number' ? e.closedTurn : null,
   }
 }
 
@@ -150,7 +151,7 @@ export function baseName(path: string): string {
 
 // ---------------------------------------------------------------- the ledger tool's input
 
-export type AddItem = { kind: Kind; text: string; why: string; confidence: Confidence | null; of: string | null }
+export type AddItem = { kind: Kind; text: string; why: string; confidence: Confidence | null; of: string | null; pos: number }
 export type ResolveItem = { id: string; status: Status; note: string }
 export type ParsedCall = { add: AddItem[]; resolve: ResolveItem[]; problems: string[] }
 
@@ -175,7 +176,7 @@ export const TOOL_SCHEMA = {
           text: { type: 'string', description: 'One line, under 200 characters.' },
           why: { type: 'string', description: 'For assumptions, decisions and findings: the evidence or reason, briefly.' },
           confidence: { type: 'string', enum: [...CONFIDENCES], description: 'For assumptions: how sure you are.' },
-          of: { type: 'string', description: 'Id of an existing entry this one serves or rests on, e.g. a step of S2, an assumption or decision of S3. Steps default to the goal.' },
+          of: { type: 'string', description: 'What this entry serves or rests on: the id of an existing entry (a step of S2, an assumption of S3), or "@N" for the Nth entry of this same `add` list, counting from 1 ("@1" is the first). Steps default to the goal.' },
         },
         required: ['kind', 'text'],
       },
@@ -200,21 +201,21 @@ export function parseCall(input: unknown): ParsedCall {
   const x = (input && typeof input === 'object' ? input : {}) as { add?: unknown; resolve?: unknown }
   const problems: string[] = []
   const add: AddItem[] = []
-  for (const raw of listOf<Record<string, unknown>>(x.add)) {
+  listOf<Record<string, unknown>>(x.add).forEach((raw, index) => {
     const kind = raw?.kind as Kind
     const text = clean(raw?.text)
     if (!KINDS.includes(kind)) {
       problems.push(`unknown kind "${String(raw?.kind)}"`)
-      continue
+      return
     }
     if (!text) {
       problems.push(`a ${kind} with no text`)
-      continue
+      return
     }
     const confidence = CONFIDENCES.includes(raw?.confidence as Confidence) ? (raw.confidence as Confidence) : null
     const of = clean(raw?.of, 12).toUpperCase()
-    add.push({ kind, text, why: clean(raw?.why, 300), confidence, of: of || null })
-  }
+    add.push({ kind, text, why: clean(raw?.why, 300), confidence, of: of || null, pos: index + 1 })
+  })
   const resolve: ResolveItem[] = []
   for (const raw of listOf<Record<string, unknown>>(x.resolve)) {
     const id = clean(raw?.id, 12).toUpperCase()
@@ -267,10 +268,15 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
   const changed: { entry: Entry; from: Status }[] = []
   const problems = [...call.problems]
 
+  // `of: "@N"` names the Nth entry of this call's `add` list, so a tree can be built in one call.
+  const byPos = new Map<number, string>()
   for (const item of call.add) {
     // The same open text logged twice is one entry.
     const dup = list.find(e => e.kind === item.kind && e.text === item.text && e.status !== 'dropped')
-    if (dup) continue
+    if (dup) {
+      byPos.set(item.pos, dup.id)
+      continue
+    }
     const next = nextId(m, item.kind)
     m = next.meta
     const entry: Entry = {
@@ -289,11 +295,15 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
       resolvedBy: null,
       ref: null,
       of: null,
+      closedTurn: null,
     }
     if (item.of) {
-      if (list.some(e => e.id === item.of)) entry.of = item.of
+      const at = /^@(\d+)$/.exec(item.of)
+      const target = at ? byPos.get(Number(at[1])) : list.find(e => e.id === item.of)?.id
+      if (target && target !== entry.id) entry.of = target
       else problems.push(`no entry ${item.of} to link ${next.id} to`)
     }
+    byPos.set(item.pos, entry.id)
     list.push(entry)
     added.push(entry)
   }
@@ -383,7 +393,7 @@ export function syncTodos(meta: Meta, entries: Entry[], todos: Todo[], stamp: St
     }
     const next = nextId(m, 'step')
     m = next.meta
-    list.push({ id: next.id, kind: 'step', text, why: '', confidence: null, status, source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null })
+    list.push({ id: next.id, kind: 'step', text, why: '', confidence: null, status, source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null, closedTurn: null })
     moved += 1
   }
   list = list.map(e =>
@@ -401,7 +411,7 @@ export function addTask(meta: Meta, entries: Entry[], taskId: string, subject: s
   const ref = `task:${taskId}`
   if (entries.some(e => e.ref === ref)) return { meta, entries }
   const next = nextId(meta, 'step')
-  const entry: Entry = { id: next.id, kind: 'step', text: clean(subject), why: '', confidence: null, status: 'open', source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null }
+  const entry: Entry = { id: next.id, kind: 'step', text: clean(subject), why: '', confidence: null, status: 'open', source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null, closedTurn: null }
   return { meta: next.meta, entries: [...entries, entry] }
 }
 
@@ -499,6 +509,160 @@ export function graphLines(roots: GraphNode[], max = 24): GraphLine[] {
   }
   roots.forEach(r => walk(r, '', true, true))
   return out.slice(0, max)
+}
+
+// ---------------------------------------------------------------- execution over time
+
+const SETTLED: ReadonlySet<Status> = new Set(['done', 'confirmed', 'invalidated', 'answered', 'dropped'])
+
+export function isSettled(status: Status): boolean {
+  return SETTLED.has(status)
+}
+
+/** Stamp the turn an entry settled in, and clear it when one is reopened. `next` is `prev` after a reducer ran. */
+export function withClosedTurns(prev: Entry[], next: Entry[], turn: number): Entry[] {
+  const before = new Map(prev.map(e => [e.id, e]))
+  return next.map(e => {
+    const was = before.get(e.id)
+    if (!isSettled(e.status)) return e.closedTurn === null ? e : { ...e, closedTurn: null }
+    if (was && was.status === e.status) return e
+    return { ...e, closedTurn: turn }
+  })
+}
+
+export type HistoryRow = { entry: Entry; cells: string[] }
+export type History = { turns: number[]; rows: HistoryRow[] }
+
+export const HISTORY_CELL = 3
+
+/** The glyph an entry ends on: settled well, wrong, or dropped. */
+export function endGlyph(status: Status): string {
+  return status === 'invalidated' ? '✗' : status === 'dropped' ? '×' : '✓'
+}
+
+/**
+ * A grid of entries (rows) against turns (columns): `○` the turn it was logged, `───` while it stayed
+ * open, `✓` `✗` `×` the turn it settled. The last `maxTurns` turns and the last `maxRows` entries show.
+ */
+export function buildHistory(entries: Entry[], currentTurn: number, maxTurns = 12, maxRows = 14): History {
+  const rows = entries.filter(e => e.kind !== 'goal')
+  const last = Math.max(currentTurn, ...rows.map(e => e.turn), 1)
+  const first = Math.max(1, last - Math.max(1, maxTurns) + 1)
+  const turns: number[] = []
+  for (let t = first; t <= last; t++) turns.push(t)
+  const pad = (s: string) => ` ${s} `.slice(0, HISTORY_CELL).padEnd(HISTORY_CELL)
+  const cell = (e: Entry, t: number): string => {
+    const born = Math.max(e.turn, 1)
+    const end = isSettled(e.status) ? Math.max(e.closedTurn ?? born, born) : null
+    if (t < born || (end !== null && t > end)) return ' '.repeat(HISTORY_CELL)
+    if (end !== null && t === end) return pad(endGlyph(e.status))
+    if (t === born) return pad('○')
+    return '─'.repeat(HISTORY_CELL)
+  }
+  const shown = rows.filter(e => (isSettled(e.status) ? Math.max(e.closedTurn ?? e.turn, e.turn) : last) >= first).slice(-maxRows)
+  return { turns, rows: shown.map(entry => ({ entry, cells: turns.map(t => cell(entry, t)) })) }
+}
+
+/** `text` cut or padded to exactly `width` cells. */
+export function fitText(text: string, width: number): string {
+  if (width <= 0) return ''
+  return text.length > width ? `${text.slice(0, Math.max(0, width - 1))}…` : text.padEnd(width)
+}
+
+// ---------------------------------------------------------------- SVG for the remote surfaces
+
+/** Escape text for SVG/XML. */
+export function esc(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+// Each SVG carries its own dark card, so contrast never depends on how a surface themes or scales it.
+const SVG_STYLE =
+  '<style>.t{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#e6edf3}.d{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#8b949e}.e{stroke:#6e7681;fill:none;stroke-width:1.2}</style>'
+
+const svgCard = (width: number, height: number) => `<rect width="${width}" height="${height}" rx="8" fill="#0d1117"/>`
+
+function statusColor(status: Status): string {
+  if (status === 'done' || status === 'confirmed' || status === 'answered') return '#2da44e'
+  if (status === 'invalidated') return '#e5534b'
+  if (status === 'active') return '#388bfd'
+  if (status === 'dropped') return '#8c959f'
+  return '#bf8700'
+}
+
+export type GraphItem = { entry: Entry; depth: number; row: number; parentRow: number | null }
+
+/** The tree flattened to rows with their depth and their parent's row, capped at `max` rows. */
+export function graphLayout(roots: GraphNode[], max = 40): GraphItem[] {
+  const out: GraphItem[] = []
+  const walk = (n: GraphNode, depth: number, parentRow: number | null) => {
+    if (out.length >= max) return
+    const row = out.length
+    out.push({ entry: n.entry, depth, row, parentRow })
+    n.children.forEach(c => walk(c, depth + 1, row))
+  }
+  roots.forEach(r => walk(r, 0, null))
+  return out
+}
+
+export const SVG_WIDTH = 480
+const ROW = 24
+const INDENT = 22
+
+/** The structure tree as an SVG: a dot per entry coloured by status, elbow edges to its parent. */
+export function graphSvg(roots: GraphNode[], width = SVG_WIDTH): string {
+  const items = graphLayout(roots)
+  const height = items.length * ROW + 16
+  const x = (depth: number) => 14 + depth * INDENT
+  const y = (row: number) => 14 + row * ROW
+  const parts: string[] = []
+  for (const it of items) {
+    if (it.parentRow === null) continue
+    const parent = items[it.parentRow]
+    if (!parent) continue
+    parts.push(`<path class="e" d="M${x(parent.depth)} ${y(parent.row) + 6}V${y(it.row)}H${x(it.depth) - 6}"/>`)
+  }
+  for (const it of items) {
+    const e = it.entry
+    const cx = x(it.depth)
+    const cy = y(it.row)
+    const room = Math.max(8, Math.floor((width - cx - 20) / 7))
+    const label = e.text.length > room - e.id.length - 1 ? `${e.text.slice(0, Math.max(1, room - e.id.length - 2))}…` : e.text
+    const dim = e.status === 'done' || e.status === 'confirmed' || e.status === 'dropped'
+    const shape = e.kind === 'goal' ? `<rect x="${cx - 6}" y="${cy - 6}" width="12" height="12" rx="3" fill="${statusColor(e.status)}"/>` : e.kind === 'decision' ? `<rect x="${cx - 4.5}" y="${cy - 4.5}" width="9" height="9" transform="rotate(45 ${cx} ${cy})" fill="${statusColor(e.status)}"/>` : `<circle cx="${cx}" cy="${cy}" r="5" fill="${statusColor(e.status)}"/>`
+    parts.push(shape, `<text class="d" x="${cx + 12}" y="${cy + 4}">${esc(e.id)}</text>`, `<text class="${dim ? 'd' : 't'}" x="${cx + 12 + (e.id.length + 1) * 7}" y="${cy + 4}">${esc(label)}</text>`)
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${SVG_STYLE}${svgCard(width, height)}${parts.join('')}</svg>`
+}
+
+const CELL = 26
+const LABEL = 190
+
+/** The history grid as an SVG: a bar from the turn an entry was logged to the turn it settled. */
+export function historySvg(history: History): string {
+  const cols = history.turns.length
+  const width = LABEL + cols * CELL + 12
+  const height = 30 + history.rows.length * 22 + 8
+  const cx = (i: number) => LABEL + i * CELL + CELL / 2
+  const parts: string[] = []
+  history.turns.forEach((t, i) => parts.push(`<text class="d" x="${cx(i)}" y="14" text-anchor="middle">${t % 100}</text>`))
+  history.rows.forEach((r, ri) => {
+    const cy = 30 + ri * 22 + 8
+    const e = r.entry
+    const first = r.cells.findIndex(c => c.trim() !== '')
+    let last = -1
+    r.cells.forEach((c, i) => {
+      if (c.trim() !== '') last = i
+    })
+    const room = Math.floor((LABEL - 12) / 7)
+    const label = `${e.id} ${e.text}`
+    parts.push(`<text class="${isSettled(e.status) ? 'd' : 't'}" x="4" y="${cy + 4}">${esc(label.length > room ? `${label.slice(0, room - 1)}…` : label)}</text>`)
+    if (first < 0) return
+    if (last > first) parts.push(`<line class="e" x1="${cx(first)}" y1="${cy}" x2="${cx(last)}" y2="${cy}"/>`)
+    parts.push(`<circle cx="${cx(first)}" cy="${cy}" r="4" fill="${statusColor(first === last && isSettled(e.status) ? e.status : 'open')}"/>`)
+    if (isSettled(e.status) && last > first) parts.push(`<circle cx="${cx(last)}" cy="${cy}" r="6" fill="${statusColor(e.status)}"/><text x="${cx(last)}" y="${cy + 4}" text-anchor="middle" font-size="10" fill="#fff">${esc(endGlyph(e.status))}</text>`)
+  })
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${SVG_STYLE}${svgCard(width, height)}${parts.join('')}</svg>`
 }
 
 export function activeStep(entries: Entry[]): Entry | null {
@@ -601,7 +765,7 @@ export const INSTRUCTIONS = [
   '- Log a decision when you choose between real alternatives, with the reason. Log open questions you are deferring or guessing on, and risks you notice.',
   '- Log a finding when you learn a fact that matters to the task and settles no assumption (a limit, a cause, a surprise), with where you saw it as `why`.',
   '- Resolve entries as you learn: confirm or invalidate assumptions (say what you found in `note`), mark steps active and done, answer questions. If the plan changes, drop the stale steps and add the new ones.',
-  '- Steps hang off the goal in the pane\'s structure tree. To show how things relate, pass `of` with the id of an entry from an earlier result: a sub-step of S2, an assumption or decision of the step that rests on it.',
+  '- Steps hang off the goal in the pane\'s structure tree. To show how things relate, pass `of`: an id from an earlier result, or "@N" for the Nth entry of the same call ("@2" is the second), e.g. a sub-step of S2, or an assumption of the step it rests on.',
   '- If you keep a todo or task list, the ledger reads it; you need not repeat those steps.',
   '- Batch entries; one short line each. Skip the ledger for one-step requests and plain conversation.',
   '- The ledger is for transparency, not a substitute for asking: when a wrong guess would be costly, ask the user.',
