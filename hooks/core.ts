@@ -470,9 +470,17 @@ export function termColors(pal: Palette, brandAccent: boolean): TermColors {
   return { accent: pal.accent, success: pal.ok, error: pal.bad, warning: pal.warn, suggestion: pal.active, subtle: pal.dim, inactive: pal.off, planMode: pal.accent }
 }
 
-export type GraphNode = { entry: Entry; children: GraphNode[] }
+/**
+ * A node of the structure tree. `touched` lists the invalidated assumptions it sits under or above
+ * (so a wrong assumption's reach is visible), `onDamage` marks the path to one, `onPath` the path to
+ * an active step, and `hidden` how many finished descendants were folded into it.
+ */
+export type GraphNode = { entry: Entry; children: GraphNode[]; touched: string[]; onDamage: boolean; onPath: boolean; hidden: number }
 
 export const GRAPH_MAX_DEPTH = 4
+
+/** Above this many nodes, fully finished branches fold into one line. */
+export const GRAPH_COLLAPSE_AT = 12
 
 /**
  * The goal's tree: steps hang off the goal (or the step they name in `of`); assumptions, decisions,
@@ -480,7 +488,7 @@ export const GRAPH_MAX_DEPTH = 4
  * appear only as steps under the goal; the rest stay in their own sections. Dropped entries and
  * everything below them are left out. With no goal, top-level steps are the roots.
  */
-export function buildGraph(entries: Entry[]): GraphNode[] {
+export function buildGraph(entries: Entry[], collapse = true): GraphNode[] {
   const goal = currentGoal(entries)
   const live = entries.filter(e => e.status !== 'dropped' && e.kind !== 'goal')
   const byId = new Map(live.map(e => [e.id, e]))
@@ -498,10 +506,57 @@ export function buildGraph(entries: Entry[]): GraphNode[] {
   const grow = (e: Entry, depth: number): GraphNode => {
     seen.add(e.id)
     const children = depth >= GRAPH_MAX_DEPTH ? [] : (kids.get(e.id) ?? []).filter(k => !seen.has(k.id)).map(k => grow(k, depth + 1))
-    return { entry: e, children }
+    return { entry: e, children, touched: [], onDamage: false, onPath: false, hidden: 0 }
   }
-  if (goal) return [grow(goal, 0)]
-  return (kids.get(null) ?? []).map(e => grow(e, 0))
+  const roots = goal ? [grow(goal, 0)] : (kids.get(null) ?? []).map(e => grow(e, 0))
+
+  // Invalidated assumptions: everything under one rests on it, and everything above it holds it.
+  const decorate = (n: GraphNode, above: string[]): string[] => {
+    const here = n.entry.kind === 'assumption' && n.entry.status === 'invalidated' ? [n.entry.id] : []
+    const below: string[] = []
+    for (const c of n.children) below.push(...decorate(c, [...above, ...here]))
+    n.touched = n.entry.kind === 'goal' ? [] : [...new Set([...above, ...below])]
+    n.onDamage = here.length > 0 || below.length > 0
+    return [...here, ...below]
+  }
+  const markPath = (n: GraphNode): boolean => {
+    const hits = n.children.map(markPath)
+    n.onPath = (n.entry.kind === 'step' && n.entry.status === 'active') || hits.some(Boolean)
+    return n.onPath
+  }
+  roots.forEach(r => {
+    decorate(r, [])
+    markPath(r)
+  })
+
+  const count = (n: GraphNode): number => 1 + n.children.reduce((a, c) => a + count(c), 0)
+  const settledBelow = (n: GraphNode): boolean => n.children.every(c => isSettled(c.entry.status) && c.entry.status !== 'invalidated' && settledBelow(c))
+  const fold = (n: GraphNode) => {
+    if (n.entry.kind === 'step' && n.entry.status === 'done' && !n.onPath && !n.onDamage && n.touched.length === 0 && n.children.length > 0 && settledBelow(n)) {
+      n.hidden = count(n) - 1
+      n.children = []
+      return
+    }
+    n.children.forEach(fold)
+  }
+  if (collapse && roots.reduce((a, r) => a + count(r), 0) > GRAPH_COLLAPSE_AT) roots.forEach(fold)
+  return roots
+}
+
+/** Live entries the tree does not reach: the agent did not link them to anything. */
+export function unlinkedCount(entries: Entry[]): number {
+  const inTree = new Set<string>()
+  const walk = (n: GraphNode) => {
+    inTree.add(n.entry.id)
+    n.children.forEach(walk)
+  }
+  buildGraph(entries, false).forEach(walk)
+  return entries.filter(e => e.kind !== 'goal' && e.status !== 'dropped' && !inTree.has(e.id)).length
+}
+
+/** `⚠A1,A2` for a node touched by invalidated assumptions (two shown, then `+`), or ''. */
+export function touchedTag(ids: string[]): string {
+  return ids.length === 0 ? '' : `⚠${ids.slice(0, 2).join(',')}${ids.length > 2 ? '+' : ''}`
 }
 
 /** The marker glyph in the SVG: like the text one, but an open step is a ring and a finding an `i`, which read at that size. */
@@ -511,7 +566,7 @@ export function svgGlyph(e: Entry): string {
   return graphGlyph(e)
 }
 
-export type GraphLine = { prefix: string; glyph: string; entry: Entry }
+export type GraphLine = { prefix: string; glyph: string; entry: Entry; tag: string; onPath: boolean; hidden: number }
 
 const GLYPH_BY_KIND: Record<Kind, string> = { goal: '◎', assumption: '?', step: '·', decision: '◇', question: '?', risk: '!', finding: '•' }
 
@@ -526,7 +581,7 @@ export function graphGlyph(e: Entry): string {
 export function graphLines(roots: GraphNode[], max = 24): GraphLine[] {
   const out: GraphLine[] = []
   const walk = (n: GraphNode, lead: string, isLast: boolean, isRoot: boolean) => {
-    out.push({ prefix: isRoot ? '' : lead + (isLast ? '└─ ' : '├─ '), glyph: graphGlyph(n.entry), entry: n.entry })
+    out.push({ prefix: isRoot ? '' : lead + (isLast ? '└─ ' : '├─ '), glyph: graphGlyph(n.entry), entry: n.entry, tag: touchedTag(n.touched), onPath: n.onPath, hidden: n.hidden })
     const next = isRoot ? '' : lead + (isLast ? '   ' : '│  ')
     n.children.forEach((c, i) => walk(c, next, i === n.children.length - 1, false))
   }
@@ -601,7 +656,7 @@ export function esc(text: string): string {
 
 // Each SVG carries its own dark card, so contrast never depends on how a surface themes or scales it.
 const svgStyle = (p: Palette) =>
-  `<style>.t{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:${p.text}}.d{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:${p.dim}}.e{stroke:${p.edge};fill:none;stroke-width:1.2}</style>`
+  `<style>.t{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:${p.text}}.d{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:${p.dim}}.e{stroke:${p.edge};fill:none;stroke-width:1.2}.eb{stroke:${p.bad};fill:none;stroke-width:1.8}</style>`
 
 const svgCard = (width: number, height: number, p: Palette) => `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="8" fill="${p.bg}" stroke="${p.border}"/>`
 
@@ -615,7 +670,7 @@ function statusColor(status: Status, p: Palette): string {
   return p.warn
 }
 
-export type GraphItem = { entry: Entry; depth: number; row: number; parentRow: number | null }
+export type GraphItem = { entry: Entry; depth: number; row: number; parentRow: number | null; node: GraphNode }
 
 /** The tree flattened to rows with their depth and their parent's row, capped at `max` rows. */
 export function graphLayout(roots: GraphNode[], max = 40): GraphItem[] {
@@ -623,7 +678,7 @@ export function graphLayout(roots: GraphNode[], max = 40): GraphItem[] {
   const walk = (n: GraphNode, depth: number, parentRow: number | null) => {
     if (out.length >= max) return
     const row = out.length
-    out.push({ entry: n.entry, depth, row, parentRow })
+    out.push({ entry: n.entry, depth, row, parentRow, node: n })
     n.children.forEach(c => walk(c, depth + 1, row))
   }
   roots.forEach(r => walk(r, 0, null))
@@ -631,13 +686,14 @@ export function graphLayout(roots: GraphNode[], max = 40): GraphItem[] {
 }
 
 /** Alt text for the structure SVG: each entry with its kind, parent and status. */
-export function graphAlt(roots: GraphNode[]): string {
+export function graphAlt(roots: GraphNode[], unlinked = 0): string {
   const items = graphLayout(roots)
   const rows = items.map(it => {
     const parent = it.parentRow === null ? null : items[it.parentRow]?.entry.id
-    return `${it.entry.id}, ${it.entry.kind}${parent ? ` under ${parent}` : ''}, ${it.entry.status}: ${it.entry.text}`
+    const hit = it.node.touched.length > 0 ? `, affected by invalidated ${it.node.touched.join(' and ')}` : ''
+    return `${it.entry.id}, ${it.entry.kind}${parent ? ` under ${parent}` : ''}, ${it.entry.status}${hit}: ${it.entry.text}`
   })
-  return `Structure: ${rows.join('; ')}`
+  return `Structure: ${rows.join('; ')}${unlinked > 0 ? `; ${unlinked} more entries are not linked into the tree` : ''}`
 }
 
 /** Alt text for the history SVG. */
@@ -651,9 +707,9 @@ const ROW = 24
 const INDENT = 22
 
 /** The structure tree as an SVG: a dot per entry coloured by status, elbow edges to its parent. */
-export function graphSvg(roots: GraphNode[], width = SVG_WIDTH, pal: Palette = paletteOf(DEFAULT_PALETTE_ID)): string {
+export function graphSvg(roots: GraphNode[], width = SVG_WIDTH, pal: Palette = paletteOf(DEFAULT_PALETTE_ID), unlinked = 0): string {
   const items = graphLayout(roots)
-  const height = items.length * ROW + 16
+  const height = items.length * ROW + 16 + (unlinked > 0 ? 20 : 0)
   const x = (depth: number) => 14 + depth * INDENT
   const y = (row: number) => 14 + row * ROW
   const parts: string[] = []
@@ -661,25 +717,35 @@ export function graphSvg(roots: GraphNode[], width = SVG_WIDTH, pal: Palette = p
     if (it.parentRow === null) continue
     const parent = items[it.parentRow]
     if (!parent) continue
-    parts.push(`<path class="e" d="M${x(parent.depth)} ${y(parent.row) + 6}V${y(it.row)}H${x(it.depth) - 6}"/>`)
+    parts.push(`<path class="${it.node.onDamage ? 'eb' : 'e'}" d="M${x(parent.depth)} ${y(parent.row) + 6}V${y(it.row)}H${x(it.depth) - 6}"/>`)
   }
   for (const it of items) {
     const e = it.entry
     const cx = x(it.depth)
     const cy = y(it.row)
-    const room = Math.max(8, Math.floor((width - cx - 20) / 7))
-    const label = e.text.length > room - e.id.length - 1 ? `${e.text.slice(0, Math.max(1, room - e.id.length - 2))}…` : e.text
-    const dim = e.status === 'done' || e.status === 'confirmed' || e.status === 'dropped'
+    const tag = touchedTag(it.node.touched)
+    const extra = it.node.hidden > 0 ? ` (+${it.node.hidden})` : ''
+    const idEnd = cx + 14 + (e.id.length + 1) * 7
+    const labelX = tag ? idEnd + (tag.length + 1) * 7 : idEnd
+    const room = Math.max(6, Math.floor((width - labelX - 12) / 7) - extra.length)
+    const label = e.text.length > room ? `${e.text.slice(0, Math.max(1, room - 1))}…` : e.text
+    const dim = (e.status === 'done' || e.status === 'confirmed' || e.status === 'dropped') && !it.node.onPath
     const fill = statusColor(e.status, pal)
+    // A ring marks the path from the goal to the step being worked on.
+    const ring = it.node.onPath ? ` stroke="${pal.text}" stroke-width="2"` : ''
     const shape =
       e.kind === 'goal'
-        ? `<rect x="${cx - 7}" y="${cy - 7}" width="14" height="14" rx="3" fill="${fill}"/>`
+        ? `<rect x="${cx - 7}" y="${cy - 7}" width="14" height="14" rx="3" fill="${fill}"${ring}/>`
         : e.kind === 'decision'
-          ? `<rect x="${cx - 5.5}" y="${cy - 5.5}" width="11" height="11" transform="rotate(45 ${cx} ${cy})" fill="${fill}"/>`
-          : `<circle cx="${cx}" cy="${cy}" r="7" fill="${fill}"/>`
+          ? `<rect x="${cx - 5.5}" y="${cy - 5.5}" width="11" height="11" transform="rotate(45 ${cx} ${cy})" fill="${fill}"${ring}/>`
+          : `<circle cx="${cx}" cy="${cy}" r="7" fill="${fill}"${ring}/>`
     const mark = e.kind === 'goal' || e.kind === 'decision' ? '' : `<text x="${cx}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${pal.mark}">${esc(svgGlyph(e))}</text>`
-    parts.push(shape, mark, `<text class="d" x="${cx + 14}" y="${cy + 4}">${esc(e.id)}</text>`, `<text class="${dim ? 'd' : 't'}" x="${cx + 14 + (e.id.length + 1) * 7}" y="${cy + 4}">${esc(label)}</text>`)
+    parts.push(shape, mark, `<text class="d" x="${cx + 14}" y="${cy + 4}">${esc(e.id)}</text>`)
+    if (tag) parts.push(`<text class="d" x="${idEnd}" y="${cy + 4}" fill="${pal.bad}" style="fill:${pal.bad}">${esc(tag)}</text>`)
+    parts.push(`<text class="${dim ? 'd' : 't'}" x="${labelX}" y="${cy + 4}"${it.node.onPath ? ' font-weight="700"' : ''}>${esc(label)}</text>`)
+    if (extra) parts.push(`<text class="d" x="${labelX + (label.length + 1) * 7}" y="${cy + 4}">${esc(extra.trim())}</text>`)
   }
+  if (unlinked > 0) parts.push(`<text class="d" x="14" y="${height - 10}">${unlinked} more ${unlinked === 1 ? 'entry is' : 'entries are'} not linked into the tree</text>`)
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${svgStyle(pal)}${svgCard(width, height, pal)}${parts.join('')}</svg>`
 }
 
