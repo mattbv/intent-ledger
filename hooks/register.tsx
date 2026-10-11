@@ -48,6 +48,7 @@ import {
   parseCall,
   parseConfig,
   shorten,
+  statusText,
   stripUnsafe,
   sortedAssumptions,
   statusLine,
@@ -159,7 +160,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'ledger',
       description: 'Intent Ledger: open the pane, close it, reset it, or copy the ledger as Markdown',
-      argumentHint: '[open|close|reset|copy]',
+      argumentHint: '[open|close|reset|copy|status]',
     })
     await migrate($)
     if (cfg.openOnStart) void openPane($).catch(() => undefined)
@@ -191,6 +192,7 @@ export const register: Register = (on, options) => {
       const copied = await $.ui.copy({ text: md }).catch(() => ({ isCopied: false as const }))
       return { text: copied.isCopied ? 'Ledger copied as Markdown.' : md }
     }
+    if (verb === 'status') return { text: statusText(cfg) }
     const opened = await openPane($)
     return { text: opened.isPlaced ? 'Intent Ledger opened. Focus it with ctrl+x tab; press a row to expand it.' : `Intent Ledger is not shown yet: ${opened.reason}` }
   })

@@ -27,6 +27,10 @@ jobs:
           for k in $(python3 -c "import json;print(' '.join(json.load(open('.claude-plugin/plugin.json'))['userConfig']))"); do
             grep -q "\`$k\`" README.md || { echo "README missing option $k"; exit 1; }
           done
+      - name: core.ts VERSION matches plugin.json
+        run: |
+          v=$(python3 -c "import json;print(json.load(open('.claude-plugin/plugin.json'))['version'])")
+          grep -q "export const VERSION = '$v'" hooks/core.ts || { echo "hooks/core.ts VERSION is not $v"; exit 1; }
       - name: CHANGELOG mentions the current version
         run: |
           v=$(python3 -c "import json;print(json.load(open('.claude-plugin/plugin.json'))['version'])")

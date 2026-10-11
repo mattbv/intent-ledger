@@ -33,7 +33,7 @@ The ledger is built only from what the agent states openly. It must not read hid
 
 - New behaviour in `core.ts` gets a pure test; tool and pane wiring gets an engine test.
 - Run `claude plugin validate .` and `claude plugin test .` first.
-- Update README and CHANGELOG when behaviour or options change, and bump `version` in `plugin.json`: installed copies are cached by version, so an unbumped change never reaches an update.
+- Update README and CHANGELOG when behaviour or options change, and bump `version` in `plugin.json` and `VERSION` in `hooks/core.ts` (CI checks they match): installed copies are cached by version, so an unbumped change never reaches an update.
 - Say which surface you tried it on (terminal inline, terminal docked, desktop).
 
 Bugs and ideas: open an issue using the templates.

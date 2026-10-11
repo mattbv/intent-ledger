@@ -24,7 +24,8 @@ There is no documented single-test flag; to iterate on one case, narrow it tempo
 - `hooks/hooks.json` only lists the module entry point: `./register.tsx`.
 - `hooks/core.ts` is **pure**: reducers (`applyCall`, `syncTodos`, `markByYou`, ...), input validation (`parseCall`, `normalize*`), status/summary helpers and `toMarkdown`. It must stay free of host imports so it can be unit-tested directly.
 - `hooks/register.tsx` is the host-facing layer: registers the `mcp__intent-ledger__ledger` tool (auto-allowed by a `tool.check` hook when `autoAllow` is on), the system-prompt section (`INSTRUCTIONS`), observers for `TodoWrite` / `TaskCreate` / `TaskUpdate` / `ExitPlanMode` / edit tools, per-turn bookkeeping, the `/ledger` command, status line and the pane UI. It wires `core.ts` functions to atoms (`atom`, `read`, `update`).
-- `hooks/palettes.ts` is pure colour data (`palette` option); `termColors` and the SVG builders in `core.ts` take a palette.
+- `hooks/palettes.ts` is pure colour data (`palette` option) plus the contrast helpers: `paletteOf` returns a copy with dim text, lines and status colours nudged to stay legible on the palette's own background (`legible`), and `markOn` picks the marker glyph colour per status colour. `termColors` and the SVG builders in `core.ts` take a palette. A test checks every palette's contrast.
+- `VERSION` in `hooks/core.ts` must equal `version` in `plugin.json` (CI checks); `/ledger status` prints it.
 - `types/index.d.ts` is the shared state contract (`Entry`, `Status`, `Moment`, `Turn`, `Footprint`, `View`, ...). Change it first when altering state shape, and update the `normalize*` functions so previously stored state still loads (`SCHEMA_VERSION`).
 
 ### Invariants worth knowing
