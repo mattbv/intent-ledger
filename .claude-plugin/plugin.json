@@ -1,6 +1,6 @@
 {
   "name": "intent-ledger",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Intent Ledger: a live pane of what the agent is aiming for, assuming, planning and deciding, so you can watch its intent and correct a wrong assumption early",
   "author": {
     "name": "Matheus Boni Vicari"
@@ -45,6 +45,13 @@
       "description": "Open the pane when a session starts (wide terminals and the desktop app)",
       "type": "boolean",
       "default": true
+    },
+    "palette": {
+      "title": "Colour palette",
+      "description": "Colours for the pane text and diagrams: default follows your Claude Code theme; the others are fixed editor palettes (Catppuccin, Dracula, Gruvbox, Tokyo Night, Nord, Solarized, Rosé Pine)",
+      "type": "string",
+      "options": ["default", "catppuccin-mocha", "catppuccin-latte", "dracula", "gruvbox-dark", "tokyo-night", "nord", "solarized-dark", "rose-pine"],
+      "default": "default"
     },
     "brandAccent": {
       "title": "Brand accent on headers",

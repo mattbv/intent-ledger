@@ -1,3 +1,5 @@
+import { DEFAULT_PALETTE_ID, PALETTE_IDS, paletteOf } from './palettes'
+import type { Palette } from './palettes'
 import type { Confidence, Entry, Footprint, Kind, Meta, Moment, Source, Status, Tone, Turn, View } from '../types'
 
 export const SCHEMA_VERSION = 1
@@ -46,6 +48,7 @@ export type Config = {
   openOnStart: boolean
   statusLine: boolean
   brandAccent: boolean
+  palette: string
 }
 
 export function parseConfig(options: Record<string, unknown> | undefined): Config {
@@ -60,6 +63,7 @@ export function parseConfig(options: Record<string, unknown> | undefined): Confi
     openOnStart: bool('openOnStart', true),
     statusLine: bool('statusLine', true),
     brandAccent: bool('brandAccent', false),
+    palette: typeof o.palette === 'string' && PALETTE_IDS.includes(o.palette) ? o.palette : DEFAULT_PALETTE_ID,
   }
 }
 
@@ -456,6 +460,16 @@ export function currentGoal(entries: Entry[]): Entry | null {
 
 // ---------------------------------------------------------------- the structure graph
 
+/** Colours for the terminal text: Claude Code's theme keys, or the palette's hex when one is chosen. */
+export type TermColors = { accent: string | undefined; success: string; error: string; warning: string; suggestion: string; subtle: string; inactive: string; planMode: string }
+
+export function termColors(pal: Palette, brandAccent: boolean): TermColors {
+  if (!pal.themed) {
+    return { accent: brandAccent ? 'claude' : undefined, success: 'success', error: 'error', warning: 'warning', suggestion: 'suggestion', subtle: 'subtle', inactive: 'inactive', planMode: 'planMode' }
+  }
+  return { accent: pal.accent, success: pal.ok, error: pal.bad, warning: pal.warn, suggestion: pal.active, subtle: pal.dim, inactive: pal.off, planMode: pal.accent }
+}
+
 export type GraphNode = { entry: Entry; children: GraphNode[] }
 
 export const GRAPH_MAX_DEPTH = 4
@@ -586,20 +600,19 @@ export function esc(text: string): string {
 }
 
 // Each SVG carries its own dark card, so contrast never depends on how a surface themes or scales it.
-const SVG_STYLE =
-  '<style>.t{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#e6edf3}.d{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#8b949e}.e{stroke:#6e7681;fill:none;stroke-width:1.2}</style>'
+const svgStyle = (p: Palette) =>
+  `<style>.t{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:${p.text}}.d{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:${p.dim}}.e{stroke:${p.edge};fill:none;stroke-width:1.2}</style>`
 
-const svgCard = (width: number, height: number) => `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="8" fill="#0d1117" stroke="#30363d"/>`
+const svgCard = (width: number, height: number, p: Palette) => `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="8" fill="${p.bg}" stroke="${p.border}"/>`
 
-// Marker glyphs are dark on the status colours (all above 4.5:1), so a status never rests on colour alone.
-const MARK = '#0d1117'
+// Marker glyphs sit on the status colours in the palette's own background colour, so a status never rests on colour alone.
 
-function statusColor(status: Status): string {
-  if (status === 'done' || status === 'confirmed' || status === 'answered') return '#2da44e'
-  if (status === 'invalidated') return '#e5534b'
-  if (status === 'active') return '#388bfd'
-  if (status === 'dropped') return '#8c959f'
-  return '#bf8700'
+function statusColor(status: Status, p: Palette): string {
+  if (status === 'done' || status === 'confirmed' || status === 'answered') return p.ok
+  if (status === 'invalidated') return p.bad
+  if (status === 'active') return p.active
+  if (status === 'dropped') return p.off
+  return p.warn
 }
 
 export type GraphItem = { entry: Entry; depth: number; row: number; parentRow: number | null }
@@ -638,7 +651,7 @@ const ROW = 24
 const INDENT = 22
 
 /** The structure tree as an SVG: a dot per entry coloured by status, elbow edges to its parent. */
-export function graphSvg(roots: GraphNode[], width = SVG_WIDTH): string {
+export function graphSvg(roots: GraphNode[], width = SVG_WIDTH, pal: Palette = paletteOf(DEFAULT_PALETTE_ID)): string {
   const items = graphLayout(roots)
   const height = items.length * ROW + 16
   const x = (depth: number) => 14 + depth * INDENT
@@ -657,24 +670,24 @@ export function graphSvg(roots: GraphNode[], width = SVG_WIDTH): string {
     const room = Math.max(8, Math.floor((width - cx - 20) / 7))
     const label = e.text.length > room - e.id.length - 1 ? `${e.text.slice(0, Math.max(1, room - e.id.length - 2))}…` : e.text
     const dim = e.status === 'done' || e.status === 'confirmed' || e.status === 'dropped'
-    const fill = statusColor(e.status)
+    const fill = statusColor(e.status, pal)
     const shape =
       e.kind === 'goal'
         ? `<rect x="${cx - 7}" y="${cy - 7}" width="14" height="14" rx="3" fill="${fill}"/>`
         : e.kind === 'decision'
           ? `<rect x="${cx - 5.5}" y="${cy - 5.5}" width="11" height="11" transform="rotate(45 ${cx} ${cy})" fill="${fill}"/>`
           : `<circle cx="${cx}" cy="${cy}" r="7" fill="${fill}"/>`
-    const mark = e.kind === 'goal' || e.kind === 'decision' ? '' : `<text x="${cx}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${MARK}">${esc(svgGlyph(e))}</text>`
+    const mark = e.kind === 'goal' || e.kind === 'decision' ? '' : `<text x="${cx}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${pal.mark}">${esc(svgGlyph(e))}</text>`
     parts.push(shape, mark, `<text class="d" x="${cx + 14}" y="${cy + 4}">${esc(e.id)}</text>`, `<text class="${dim ? 'd' : 't'}" x="${cx + 14 + (e.id.length + 1) * 7}" y="${cy + 4}">${esc(label)}</text>`)
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${SVG_STYLE}${svgCard(width, height)}${parts.join('')}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${svgStyle(pal)}${svgCard(width, height, pal)}${parts.join('')}</svg>`
 }
 
 const CELL = 26
 const LABEL = 190
 
 /** The history grid as an SVG: a bar from the turn an entry was logged to the turn it settled. */
-export function historySvg(history: History): string {
+export function historySvg(history: History, pal: Palette = paletteOf(DEFAULT_PALETTE_ID)): string {
   const cols = history.turns.length
   const width = Math.max(LABEL + cols * CELL + 12, 310)
   const rowsTop = 30
@@ -682,7 +695,7 @@ export function historySvg(history: History): string {
   const cx = (i: number) => LABEL + i * CELL + CELL / 2
   const parts: string[] = []
   // The current turn's column is lightly shaded, so "still open" reads as "open until now".
-  parts.push(`<rect x="${LABEL + (cols - 1) * CELL}" y="2" width="${CELL}" height="${height - 26}" rx="4" fill="#161b22"/>`)
+  parts.push(`<rect x="${LABEL + (cols - 1) * CELL}" y="2" width="${CELL}" height="${height - 26}" rx="4" fill="${pal.surface}"/>`)
   history.turns.forEach((t, i) => parts.push(`<text class="${i === cols - 1 ? 't' : 'd'}" x="${cx(i)}" y="16" text-anchor="middle">${t % 100}</text>`))
   history.rows.forEach((r, ri) => {
     const cy = rowsTop + ri * 22 + 8
@@ -698,11 +711,11 @@ export function historySvg(history: History): string {
     parts.push(`<text class="t" x="4" y="${cy + 4}">${esc(e.id)}</text><text class="${settled ? 'd' : 't'}" x="${4 + (e.id.length + 1) * 7}" y="${cy + 4}">${esc(text)}</text>`)
     if (first < 0) return
     if (last > first) parts.push(`<line class="e" x1="${cx(first)}" y1="${cy}" x2="${cx(last)}" y2="${cy}"/>`)
-    if (!settled || last > first) parts.push(`<circle cx="${cx(first)}" cy="${cy}" r="4" fill="${statusColor('open')}"/>`)
-    if (settled) parts.push(`<circle cx="${cx(last)}" cy="${cy}" r="7" fill="${statusColor(e.status)}"/><text x="${cx(last)}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${MARK}">${esc(endGlyph(e.status))}</text>`)
+    if (!settled || last > first) parts.push(`<circle cx="${cx(first)}" cy="${cy}" r="4" fill="${statusColor('open', pal)}"/>`)
+    if (settled) parts.push(`<circle cx="${cx(last)}" cy="${cy}" r="7" fill="${statusColor(e.status, pal)}"/><text x="${cx(last)}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${pal.mark}">${esc(endGlyph(e.status))}</text>`)
   })
-  parts.push(`<text class="d" x="4" y="${height - 10}"><tspan fill="${statusColor('open')}">●</tspan> logged  ── open  ✓ done  ✗ wrong  × dropped</text>`)
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${SVG_STYLE}${svgCard(width, height)}${parts.join('')}</svg>`
+  parts.push(`<text class="d" x="4" y="${height - 10}"><tspan fill="${statusColor('open', pal)}">●</tspan> logged  ── open  ✓ done  ✗ wrong  × dropped</text>`)
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${svgStyle(pal)}${svgCard(width, height, pal)}${parts.join('')}</svg>`
 }
 
 export function activeStep(entries: Entry[]): Entry | null {
