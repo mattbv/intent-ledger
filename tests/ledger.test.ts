@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { PALETTES, paletteOf } from '../hooks/palettes'
+import { PALETTES, contrast, markOn, paletteOf } from '../hooks/palettes'
 import {
   DEFAULT_META,
   TOOL,
@@ -8,6 +8,8 @@ import {
   countsOf,
   buildGraph,
   parseConfig,
+  statusText,
+  VERSION,
   termColors,
   buildHistory,
   GRAPH_MAX_NODES,
@@ -438,7 +440,7 @@ test('palettes: config reads a known id, text colours switch to hex, SVGs take t
   expect(termColors(paletteOf('default'), true).accent).toBe('claude')
   expect(termColors(paletteOf('dracula'), false).success).toBe('#50fa7b')
   for (const p of PALETTES) {
-    for (const key of ['bg', 'border', 'text', 'dim', 'edge', 'surface', 'ok', 'bad', 'warn', 'active', 'off', 'accent', 'mark'] as const) {
+    for (const key of ['bg', 'border', 'text', 'dim', 'edge', 'surface', 'ok', 'bad', 'warn', 'active', 'off', 'accent'] as const) {
       expect(p[key]).toMatch(/^#[0-9a-f]{6}$/i)
     }
   }
@@ -446,6 +448,28 @@ test('palettes: config reads a known id, text colours switch to hex, SVGs take t
   expect(graphSvg(buildGraph(a.entries), 480, paletteOf('dracula'))).toContain('#282a36')
   expect(graphSvg(buildGraph(a.entries), 480, paletteOf('catppuccin-latte'))).toContain('#eff1f5')
   expect(historySvg(buildHistory(a.entries, 2), paletteOf('nord'))).toContain('#2e3440')
+})
+
+test('every palette is legible on its own background, whatever the source colours were', async () => {
+  for (const { id } of PALETTES) {
+    const p = paletteOf(id)
+    const need = (name: string, a: string, b: string, min: number) => expect(`${id} ${name} ${contrast(a, b) >= min}`).toBe(`${id} ${name} true`)
+    need('text', p.text, p.bg, 4.5)
+    need('dim', p.dim, p.bg, 4.5)
+    need('edge', p.edge, p.bg, 3)
+    for (const key of ['ok', 'bad', 'warn', 'active', 'off', 'accent'] as const) need(key, p[key], p.bg, 3)
+    for (const key of ['ok', 'bad', 'warn', 'active', 'off'] as const) need(`mark on ${key}`, markOn(p[key], p), p[key], 4.5)
+  }
+  expect(paletteOf('  Dracula ').id).toBe('dracula')
+  expect(paletteOf(undefined).id).toBe('default')
+  expect(parseConfig({ palette: ' Catppuccin-Mocha ' }).palette).toBe('catppuccin-mocha')
+})
+
+test('/ledger status text names the version and the palette in use', async () => {
+  const text = statusText(parseConfig({ palette: 'nord' }))
+  expect(text).toContain(`Intent Ledger ${VERSION}`)
+  expect(text).toContain('palette: nord')
+  expect(statusText(parseConfig(undefined))).toContain('follows your Claude Code theme')
 })
 
 test('a chosen palette colours the terminal pane in hex', { options: { palette: 'dracula' } }, async ($, on) => {

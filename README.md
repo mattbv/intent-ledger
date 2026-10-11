@@ -23,6 +23,8 @@
 
 Answer `y` to add the marketplace and pick a scope, then run `/ledger`. Mods are an early-access Claude Code feature; this was built and tested on Claude Code **2.1.296**, and the API can change between releases.
 
+To update later: `claude plugin update intent-ledger@intent-ledger`, then restart Claude Code. (`/plugin install` says "Already installed" and does not update.)
+
 To try it for one session without installing: `claude --plugin-dir ./intent-ledger`.
 
 ## Why
@@ -130,6 +132,7 @@ With `autoAllow` on, calls to its own ledger tool skip the permission prompt, in
 | `/ledger` or `/ledger open` | open the pane (any unrecognised argument does this too) |
 | `/ledger close` | close it |
 | `/ledger reset` | clear the ledger |
+| `/ledger status` | print the loaded version and the settings that shape the pane (palette, `brandAccent`, `instructAgent`, ...) |
 | `/ledger copy` | copy the entries and the approved plan as Markdown (printed to the transcript if there is no clipboard). It leaves out the timeline and the `of` links |
 
 ## Configure
@@ -143,7 +146,7 @@ In `/config`, or under `pluginConfigs["intent-ledger"].options` in `settings.jso
 | `observePlans` | `true` | fold todo lists, tasks and approved plans into the plan |
 | `staleAfterTurns` | `3` | flag an open assumption stale after this many turns (`0` disables) |
 | `openOnStart` | `true` | open the pane when a session starts (the host decides whether the pane fits) |
-| `palette` | `default` | `default` follows your Claude Code theme; or `catppuccin-mocha`, `catppuccin-latte`, `dracula`, `gruvbox-dark`, `tokyo-night`, `nord`, `solarized-dark`, `rose-pine`. A named palette colours the pane text with fixed hex colours and the SVGs with the palette |
+| `palette` | `default` | `default` follows your Claude Code theme; or `catppuccin-mocha`, `catppuccin-latte`, `dracula`, `gruvbox-dark`, `tokyo-night`, `nord`, `solarized-dark`, `rose-pine`. A named palette colours the pane text with fixed hex colours and the SVGs with the palette. Colours are adjusted where needed so text, lines and status colours stay legible on the palette's own background. The pane text is drawn on your terminal's background, so use a named palette with a matching terminal theme |
 | `brandAccent` | `false` | with the `default` palette, colour the pane headers Claude orange instead of your terminal's text colour (named palettes use their own accent) |
 | `statusLine` | `true` | show the summary in the status line |
 
@@ -153,9 +156,11 @@ In `/config`, or under `pluginConfigs["intent-ledger"].options` in `settings.jso
 
 **The pane does not open.** `/ledger` says why when it cannot place the pane; try a wider window and run it again.
 
+**The pane looks like an older version, or ignores a setting.** Run `/ledger status` for the version that is loaded and `claude plugin list` for the installed one. If they say an old version, run `claude plugin update intent-ledger@intent-ledger` and restart Claude Code. On one machine the in-app update left the install record on 0.2.0 while newer versions sat in the cache; the command fixed it.
+
 **The plugin will not load.** Check `claude --version`. Mods are early access, and this was built on 2.1.296.
 
-**Colours look wrong in a named palette.** Named palettes use fixed hex colours. How they degrade on a terminal without true colour is untested; use `default` there.
+**Colours look wrong in a named palette.** Named palettes use fixed hex colours drawn on your terminal's own background, so they look right with a matching terminal theme and can clash with another. How they degrade on a terminal without true colour is untested; use `default` to follow your Claude Code theme.
 
 ## Limits
 

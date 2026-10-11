@@ -1,6 +1,17 @@
 # Changelog
 
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.3 was released on 2026-10-11.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.4 was released on 2026-10-11.
+
+## [0.4.4]
+### Added
+- `/ledger status` prints the loaded version and the settings that shape the pane, to tell which version is running.
+
+### Fixed
+- Every palette is now legible on its own background: dim text, lines and status colours are nudged until they reach 4.5:1 (text) or 3:1 (lines, status colours), and SVG marker glyphs pick black, white or the palette's own colour per status colour, so the light Catppuccin Latte and several dark palettes no longer have faint or unreadable parts. A test checks every palette.
+- The `palette` option ignores case and stray spaces.
+
+### Docs
+- How to update (`claude plugin update intent-ledger@intent-ledger`, then restart), troubleshooting for an old version being loaded, and a note that named palettes expect a matching terminal theme.
 
 ## [0.4.3]
 ### Changed

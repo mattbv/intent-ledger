@@ -1,8 +1,10 @@
-import { DEFAULT_PALETTE_ID, PALETTE_IDS, paletteOf } from './palettes'
+import { DEFAULT_PALETTE_ID, PALETTE_IDS, markOn, paletteOf } from './palettes'
 import type { Palette } from './palettes'
 import type { Confidence, Entry, Footprint, Kind, Meta, Moment, Source, Status, Tone, Turn, View } from '../types'
 
 export const SCHEMA_VERSION = 1
+/** The plugin's version; keep it equal to `version` in `.claude-plugin/plugin.json` (CI checks). */
+export const VERSION = '0.4.4'
 export const PLUGIN = 'intent-ledger'
 export const TOOL_NAME = 'ledger'
 export const TOOL = 'mcp__intent-ledger__ledger'
@@ -51,6 +53,16 @@ export type Config = {
   palette: string
 }
 
+/** What `/ledger status` prints: the version and the settings that decide how the pane looks and behaves. */
+export function statusText(cfg: Config): string {
+  const on = (b: boolean) => (b ? 'on' : 'off')
+  return [
+    `Intent Ledger ${VERSION}`,
+    `palette: ${cfg.palette}${cfg.palette === DEFAULT_PALETTE_ID ? ` (follows your Claude Code theme; brandAccent ${on(cfg.brandAccent)})` : ''}`,
+    `instructAgent ${on(cfg.instructAgent)} · observePlans ${on(cfg.observePlans)} · autoAllow ${on(cfg.autoAllow)} · statusLine ${on(cfg.statusLine)} · openOnStart ${on(cfg.openOnStart)} · stale after ${cfg.staleAfterTurns} turns`,
+  ].join('\n')
+}
+
 export function parseConfig(options: Record<string, unknown> | undefined): Config {
   const o = options ?? {}
   const bool = (k: string, d: boolean) => (typeof o[k] === 'boolean' ? (o[k] as boolean) : d)
@@ -63,7 +75,7 @@ export function parseConfig(options: Record<string, unknown> | undefined): Confi
     openOnStart: bool('openOnStart', true),
     statusLine: bool('statusLine', true),
     brandAccent: bool('brandAccent', false),
-    palette: typeof o.palette === 'string' && PALETTE_IDS.includes(o.palette) ? o.palette : DEFAULT_PALETTE_ID,
+    palette: typeof o.palette === 'string' && PALETTE_IDS.includes(o.palette.trim().toLowerCase()) ? o.palette.trim().toLowerCase() : DEFAULT_PALETTE_ID,
   }
 }
 
@@ -817,7 +829,7 @@ export function graphSvg(roots: GraphNode[], width = SVG_WIDTH, pal: Palette = p
         : e.kind === 'decision'
           ? `<rect x="${cx - 5.5}" y="${cy - 5.5}" width="11" height="11" transform="rotate(45 ${cx} ${cy})" fill="${fill}"${ring}/>`
           : `<circle cx="${cx}" cy="${cy}" r="7" fill="${fill}"${ring}/>`
-    const mark = e.kind === 'goal' || e.kind === 'decision' ? '' : `<text x="${cx}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${pal.mark}">${esc(svgGlyph(e))}</text>`
+    const mark = e.kind === 'goal' || e.kind === 'decision' ? '' : `<text x="${cx}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${markOn(fill, pal)}">${esc(svgGlyph(e))}</text>`
     parts.push(shape, mark, `<text class="d" x="${cx + 14}" y="${cy + 4}">${esc(e.id)}</text>`)
     if (tag) parts.push(`<text class="d" x="${idEnd}" y="${cy + 4}" fill="${pal.bad}" style="fill:${pal.bad}">${esc(tag)}</text>`)
     parts.push(`<text class="${dim ? 'd' : 't'}" x="${labelX}" y="${cy + 4}"${it.node.onPath ? ' font-weight="700"' : ''}>${esc(label)}</text>`)
@@ -856,7 +868,7 @@ export function historySvg(history: History, pal: Palette = paletteOf(DEFAULT_PA
     if (first < 0) return
     if (last > first) parts.push(`<line class="e" x1="${cx(first)}" y1="${cy}" x2="${cx(last)}" y2="${cy}"/>`)
     if (!settled || last > first) parts.push(`<circle cx="${cx(first)}" cy="${cy}" r="4" fill="${statusColor('open', pal)}"/>`)
-    if (settled) parts.push(`<circle cx="${cx(last)}" cy="${cy}" r="7" fill="${statusColor(e.status, pal)}"/><text x="${cx(last)}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${pal.mark}">${esc(endGlyph(e.status))}</text>`)
+    if (settled) parts.push(`<circle cx="${cx(last)}" cy="${cy}" r="7" fill="${statusColor(e.status, pal)}"/><text x="${cx(last)}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${markOn(statusColor(e.status, pal), pal)}">${esc(endGlyph(e.status))}</text>`)
   })
   parts.push(`<text class="d" x="4" y="${height - 10}"><tspan fill="${statusColor('open', pal)}">●</tspan> logged  ── open  ✓ done  ✗ wrong  × dropped</text>`)
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${svgStyle(pal)}${svgCard(width, height, pal)}${parts.join('')}</svg>`
