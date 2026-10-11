@@ -42,18 +42,20 @@ GOAL
 Add OAuth login to the API
 ▸ NOW Add a passport strategy
 
+2 open · ⚠ 1 stale · ✗ 1 · ✓ 1 · ▰▰▰▱▱▱▱▱ 2/5 · ? 1 · ! 1
+
 ASSUMPTIONS  2 open · 1 ✓ · 1 ✗ · 1 stale
 press a row to confirm or correct it
-? A3 Sessions can live in memory for now        low · T4  ▸
-? A1 stale Users table has an email column     high · T1  ▸
-✗ A2 No auth middleware exists yet           T1 · by you  ▸
-✓ A4 Express 4.x is in use                    medium · T2  ▸
+▎? A3 Sessions can live in memory for now      ▂ low · T4  ▸
+ ? A1 stale Users table has an email column   ▆ high · T1  ▸
+ ✗ A2 No auth middleware exists yet         T1 · by you  ▸
+ ✓ A4 Express 4.x is in use                 ▄ medium · T2  ▸
 
 OPEN QUESTIONS & RISKS
 ? Q1 Should refresh tokens be rotated?
 ! R1 The callback URL differs between staging and prod
 
-PLAN  2/5 done
+PLAN  ▰▰▰▱▱▱▱▱ 2/5 done
 ▸ Add a passport strategy
 · Wire the callback route
 · Write integration tests
@@ -74,7 +76,7 @@ T5 main changed 3 files with nothing logged (routes.ts, …)
 
 | Section | Shows |
 | --- | --- |
-| **Goal** and **NOW** | the latest active goal (with "n earlier" if you have more), and the step in progress |
+| **Goal**, **NOW** and the **health strip** | the latest active goal (with "n earlier" if you have more), the step in progress, and one line of what needs attention: open and stale assumptions, invalidated and confirmed ones, a plan progress bar, open questions and risks (only the non-zero parts) |
 | **Assumptions** | status (`?` open, `✓` confirmed, `✗` invalidated), confidence, the turn logged, who logged it, and a `stale` badge before the claim once it has gone unverified for N turns. Ordered open, invalidated, confirmed, dropped (newest first); the pane shows 12 |
 | **Open questions & risks** | what the agent is deferring or guessing on (`?` question, `!` risk), the latest 5 |
 | **Plan** | the agent's logged steps plus its todo list and task list, read automatically, and the plan you approved in plan mode (expandable). When the Structure tree is shown, the plan keeps to what is active and next |
@@ -82,6 +84,8 @@ T5 main changed 3 files with nothing logged (routes.ts, …)
 | **Structure** | the goal, its steps and sub-steps, and the assumptions, decisions, findings, questions and risks the agent linked to them with `of` (up to 30 nodes). `⚠A1` marks every node above or below an invalidated assumption; a bold path runs to the active step; finished branches fold to `(+n)` once the tree passes 12 nodes; "n unlinked" counts entries the agent did not link. On SVG surfaces the path to an invalidated assumption is also drawn red |
 | **History** | entries against turns: `○` logged, `───` still open, `✓` `✗` `×` settled. Shown once there are two turns and two entries; up to 12 turns and 14 rows |
 | **Timeline** | your prompts, resolutions, warnings, and (until the tree appears) every entry logged; the latest 10. A turn that **changed files with nothing logged** raises a warning |
+
+A thin `▎` in the left gutter marks what was added or changed since your last prompt, in every list (and a bar at the edge of the SVG tree), so you can see at a glance what the last turn did. Confidence shows as a small bar (`▂ low`, `▄ medium`, `▆ high`), and an open assumption's details turn amber as it nears going stale. The History header carries a sparkline of activity per turn.
 
 Inline (main-screen terminal), the pane collapses to a few rows: goal, the active step, assumption counts and the latest moment. The status line reads like `ledger · 2 open assumptions · 1 stale · 1 ✗ · plan 2/5 · 1 ?`.
 

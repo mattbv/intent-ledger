@@ -1,6 +1,13 @@
 # Changelog
 
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.4 was released on 2026-10-11.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.5 was released on 2026-10-11.
+
+## [0.4.5]
+### Added
+- A health strip under the goal: open and stale assumptions, invalidated and confirmed ones, a plan progress bar, open questions and risks.
+- A left-gutter `▎` marks entries added or changed since your last prompt (and a bar on the SVG tree).
+- Confidence shown as a small bar, open assumptions turn amber as they near going stale, and a sparkline of activity per turn in the History header.
+- A plan progress bar in the Plan header; `docs/recording-a-demo.md` describes how to record a demo.
 
 ## [0.4.4]
 ### Added
