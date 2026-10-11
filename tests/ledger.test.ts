@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { PALETTES, paletteOf } from '../hooks/palettes'
 import {
   DEFAULT_META,
   TOOL,
@@ -7,6 +8,7 @@ import {
   countsOf,
   buildGraph,
   parseConfig,
+  termColors,
   buildHistory,
   graphAlt,
   graphSvg,
@@ -280,6 +282,35 @@ test('parseConfig defaults brandAccent off and reads it when set', async () => {
   expect(parseConfig(undefined).brandAccent).toBe(false)
   expect(parseConfig({ brandAccent: true }).brandAccent).toBe(true)
   expect(parseConfig({ brandAccent: 'yes' }).brandAccent).toBe(false)
+})
+
+test('palettes: config reads a known id, text colours switch to hex, SVGs take the palette', async () => {
+  expect(parseConfig(undefined).palette).toBe('default')
+  expect(parseConfig({ palette: 'dracula' }).palette).toBe('dracula')
+  expect(parseConfig({ palette: 'not-a-theme' }).palette).toBe('default')
+  expect(parseConfig({ palette: 7 }).palette).toBe('default')
+  expect(termColors(paletteOf('default'), false).success).toBe('success')
+  expect(termColors(paletteOf('default'), true).accent).toBe('claude')
+  expect(termColors(paletteOf('dracula'), false).success).toBe('#50fa7b')
+  for (const p of PALETTES) {
+    for (const key of ['bg', 'border', 'text', 'dim', 'edge', 'surface', 'ok', 'bad', 'warn', 'active', 'off', 'accent', 'mark'] as const) {
+      expect(p[key]).toMatch(/^#[0-9a-f]{6}$/i)
+    }
+  }
+  const a = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'G' }, { kind: 'step', text: 'One' }] }), STAMP)
+  expect(graphSvg(buildGraph(a.entries), 480, paletteOf('dracula'))).toContain('#282a36')
+  expect(graphSvg(buildGraph(a.entries), 480, paletteOf('catppuccin-latte'))).toContain('#eff1f5')
+  expect(historySvg(buildHistory(a.entries, 2), paletteOf('nord'))).toContain('#2e3440')
+})
+
+test('a chosen palette colours the terminal pane in hex', { options: { palette: 'dracula' } }, async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  await $.tool.call({ tool: TOOL, add: [{ kind: 'goal', text: 'Ship it' }, { kind: 'assumption', text: 'Maybe' }] } as never)
+  const ui = await $.ui.mount({ plugin: 'intent-ledger', surface: 'terminal', component: 'Pane', requestId: 'intent-ledger', props: PANE_PROPS })
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('#bd93f9')
+  expect(drawn).not.toContain('"color":"warning"')
+  await ui.unmount()
 })
 
 test('confirming an assumption from the pane reaches the next ledger result', async ($, on) => {
