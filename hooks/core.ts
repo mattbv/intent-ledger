@@ -5,11 +5,11 @@ export const PLUGIN = 'intent-ledger'
 export const TOOL_NAME = 'ledger'
 export const TOOL = 'mcp__intent-ledger__ledger'
 
-export const KINDS: readonly Kind[] = ['goal', 'assumption', 'step', 'decision', 'question', 'risk']
+export const KINDS: readonly Kind[] = ['goal', 'assumption', 'step', 'decision', 'question', 'risk', 'finding']
 export const STATUSES: readonly Status[] = ['open', 'active', 'done', 'confirmed', 'invalidated', 'answered', 'dropped']
 export const CONFIDENCES: readonly Confidence[] = ['low', 'medium', 'high']
 
-const PREFIX: Record<Kind, string> = { goal: 'G', assumption: 'A', step: 'S', decision: 'D', question: 'Q', risk: 'R' }
+const PREFIX: Record<Kind, string> = { goal: 'G', assumption: 'A', step: 'S', decision: 'D', question: 'Q', risk: 'R', finding: 'F' }
 
 /** The statuses each kind can take; the first is where a new entry starts. */
 export const ALLOWED: Record<Kind, readonly Status[]> = {
@@ -19,6 +19,7 @@ export const ALLOWED: Record<Kind, readonly Status[]> = {
   decision: ['open', 'dropped'],
   question: ['open', 'answered', 'dropped'],
   risk: ['open', 'dropped'],
+  finding: ['open', 'dropped'],
 }
 
 /** Where a new entry of a kind starts. */
@@ -26,7 +27,7 @@ export function startOf(kind: Kind): Status {
   return ALLOWED[kind][0] ?? 'open'
 }
 
-export const DEFAULT_META: Meta = { schemaVersion: SCHEMA_VERSION, seq: { goal: 0, assumption: 0, step: 0, decision: 0, question: 0, risk: 0 } }
+export const DEFAULT_META: Meta = { schemaVersion: SCHEMA_VERSION, seq: { goal: 0, assumption: 0, step: 0, decision: 0, question: 0, risk: 0, finding: 0 } }
 export const DEFAULT_TURN: Turn = { n: 0, startedAt: 0, logged: 0, edits: [], isRunning: false }
 export const DEFAULT_FOOTPRINT: Footprint = { files: [], unloggedTurns: [] }
 export const DEFAULT_VIEW: View = { expanded: null }
@@ -154,7 +155,7 @@ export type ParsedCall = { add: AddItem[]; resolve: ResolveItem[]; problems: str
 
 export const TOOL_DESCRIPTION = [
   'Record your intent in the ledger the user watches in a side pane: your goal, the assumptions you are acting on,',
-  'your planned steps, decisions between alternatives, open questions and risks. One short line per entry; batch several in one call.',
+  'your planned steps, decisions between alternatives, open questions, risks and findings (facts you learned). One short line per entry; batch several in one call.',
   'Use `resolve` to update an entry by id as you learn: confirm or invalidate an assumption (say what you found in `note`),',
   'mark a step active or done, answer a question, or drop an entry that no longer applies.',
   'The result lists what is still open, including any assumption the user marked in the pane.',
@@ -171,7 +172,7 @@ export const TOOL_SCHEMA = {
         properties: {
           kind: { type: 'string', enum: [...KINDS] },
           text: { type: 'string', description: 'One line, under 200 characters.' },
-          why: { type: 'string', description: 'For assumptions and decisions: the evidence or reason, briefly.' },
+          why: { type: 'string', description: 'For assumptions, decisions and findings: the evidence or reason, briefly.' },
           confidence: { type: 'string', enum: [...CONFIDENCES], description: 'For assumptions: how sure you are.' },
         },
         required: ['kind', 'text'],
@@ -517,6 +518,7 @@ export function toMarkdown(entries: Entry[], plan: { text: string } | null): str
     sec('Decisions', 'decision'),
     sec('Questions', 'question'),
     sec('Risks', 'risk'),
+    sec('Findings', 'finding'),
     plan ? `## Approved plan\n\n${plan.text}\n` : '',
   ]
   return parts.filter(Boolean).join('\n')
@@ -530,6 +532,7 @@ export const INSTRUCTIONS = [
   '- When you start a task that takes more than a couple of steps, log the goal as you understand it, the assumptions you are acting on (about the code, the environment, or what the user wants) and your planned steps, in one call.',
   '- Log an assumption whenever you are about to act on something you have not verified. Give a brief `why` and a `confidence`.',
   '- Log a decision when you choose between real alternatives, with the reason. Log open questions you are deferring or guessing on, and risks you notice.',
+  '- Log a finding when you learn a fact that matters to the task and settles no assumption (a limit, a cause, a surprise), with where you saw it as `why`.',
   '- Resolve entries as you learn: confirm or invalidate assumptions (say what you found in `note`), mark steps active and done, answer questions. If the plan changes, drop the stale steps and add the new ones.',
   '- If you keep a todo or task list, the ledger reads it; you need not repeat those steps.',
   '- Batch entries; one short line each. Skip the ledger for one-step requests and plain conversation.',

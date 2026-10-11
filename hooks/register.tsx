@@ -370,6 +370,7 @@ export const register: Register = (on, options) => {
     const steps = list.filter(x => x.kind === 'step' && x.status !== 'dropped')
     const stepsShown = [...steps.filter(s => s.status === 'done').slice(-2), ...steps.filter(s => s.status !== 'done')].slice(0, 10)
     const decisions = list.filter(x => x.kind === 'decision' && x.status !== 'dropped').slice(-4)
+    const findings = list.filter(x => x.kind === 'finding' && x.status !== 'dropped').slice(-4)
     const openQs = list.filter(x => (x.kind === 'question' || x.kind === 'risk') && x.status === 'open').slice(-5)
     const otherGoals = list.filter(x => x.kind === 'goal' && x.id !== goal?.id && x.status !== 'dropped').length
 
@@ -419,6 +420,20 @@ export const register: Register = (on, options) => {
                 <Text dimColor>{d.id} </Text>
                 {d.text}
                 <Text dimColor>{d.why ? ` — ${d.why}` : ''}</Text>
+              </Text>
+            ))}
+          </Box>
+        )}
+
+        {findings.length > 0 && (
+          <Box flexDirection="column">
+            {header('FINDINGS', '')}
+            {findings.map(f => (
+              <Text wrap="truncate-end">
+                <Text color="suggestion">• </Text>
+                <Text dimColor>{f.id} </Text>
+                {f.text}
+                <Text dimColor>{f.why ? ` — ${f.why}` : ''}</Text>
               </Text>
             ))}
           </Box>

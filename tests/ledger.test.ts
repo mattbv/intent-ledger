@@ -118,9 +118,10 @@ test('the ledger tool records entries and the pane draws them on every surface t
       { kind: 'goal', text: 'Add OAuth login to the API' },
       { kind: 'assumption', text: 'Users table has an email column', why: 'schema.sql', confidence: 'high' },
       { kind: 'decision', text: 'Use passport over a hand-rolled JWT', why: 'fewer moving parts' },
+      { kind: 'finding', text: 'Pane has no background option', why: 'claude-code.d.ts' },
     ],
   } as never)
-  expect(String((ran as { result?: unknown }).result)).toContain('Logged G1, A1, D1')
+  expect(String((ran as { result?: unknown }).result)).toContain('Logged G1, A1, D1, F1')
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'intent-ledger', surface, component: 'Pane', requestId: 'intent-ledger', props: PANE_PROPS })
@@ -128,6 +129,8 @@ test('the ledger tool records entries and the pane draws them on every surface t
     expect(drawn).toContain('Add OAuth login to the API')
     expect(drawn).toContain('Users table has an email column')
     expect(drawn).toContain('Use passport over a hand-rolled JWT')
+    expect(drawn).toContain('FINDINGS')
+    expect(drawn).toContain('Pane has no background option')
     await ui.unmount()
   }
 })

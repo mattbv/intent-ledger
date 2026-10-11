@@ -6,10 +6,10 @@ Where [Flightdeck](https://github.com/scasella/claude-flightdeck) shows what the
 
 ## Install
 
-From a GitHub repository holding this folder (replace `<owner>/<repo>`):
+From GitHub:
 
 ```
-/plugin install intent-ledger --marketplace <owner>/<repo>
+/plugin install intent-ledger --marketplace mattbv/intent-ledger
 ```
 
 Answer `y` to add the marketplace, pick a scope, then run `/ledger`.
@@ -44,6 +44,9 @@ PLAN  2/5 done
 DECISIONS
 D1 Use passport over a hand-rolled JWT — fewer moving parts
 
+FINDINGS
+• F1 Pane has no background option — claude-code.d.ts
+
 OPEN QUESTIONS & RISKS
 ? Q1 Should refresh tokens be rotated?
 ! R1 The callback URL differs between staging and prod
@@ -63,6 +66,7 @@ T5 main changed 3 files with nothing logged (routes.ts, …)
 | **Assumptions** | each with status (`?` open, `✓` confirmed, `✗` invalidated), confidence, the turn it was logged, and a **stale** flag when it has gone unverified for N turns. Open ones sort first |
 | **Plan** | logged steps plus your agent's todo list / task list, read automatically; the plan you approved in plan mode, expandable |
 | **Decisions** | choices between alternatives, with the reason |
+| **Findings** | facts the agent learned that settle no assumption (a limit, a cause, a surprise), with where it saw them |
 | **Open questions & risks** | what the agent is deferring or guessing on |
 | **Timeline** | your prompts, every entry logged or resolved, and a warning when a turn **changed files with nothing logged** |
 
@@ -82,7 +86,7 @@ Your marks also appear in the agent's next ledger result, so it can reconcile it
 
 The ledger is built only from things the agent produces openly:
 
-1. **The ledger tool** (`mcp__intent-ledger__ledger`). The mod registers it and adds a short system-prompt section asking the agent to log its goal, assumptions (with why and confidence), steps, decisions, questions and risks when it starts a multi-step task, and to resolve them as it learns. Turn this off with `instructAgent: false` if you only want observed plans.
+1. **The ledger tool** (`mcp__intent-ledger__ledger`). The mod registers it and adds a short system-prompt section asking the agent to log its goal, assumptions (with why and confidence), steps, decisions, questions, risks and findings when it starts a multi-step task, and to resolve them as it learns. Turn this off with `instructAgent: false` if you only want observed plans.
 2. **Visible plan signals**: `TodoWrite`, `TaskCreate` / `TaskUpdate`, and the plan returned by `ExitPlanMode`.
 3. **Edits** (`Edit`, `Write`, `NotebookEdit`) for the footprint and the "changed files with nothing logged" warning.
 

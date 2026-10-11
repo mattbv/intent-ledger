@@ -1,10 +1,10 @@
 /** What an entry records. */
-export type Kind = 'goal' | 'assumption' | 'step' | 'decision' | 'question' | 'risk'
+export type Kind = 'goal' | 'assumption' | 'step' | 'decision' | 'question' | 'risk' | 'finding'
 
 /**
  * Where an entry stands. Assumptions: open, confirmed, invalidated, dropped.
  * Steps: open, active, done, dropped. Questions: open, answered, dropped.
- * Goals: active, done, dropped. Decisions and risks: open, dropped.
+ * Goals: active, done, dropped. Decisions, risks and findings: open, dropped.
  */
 export type Status = 'open' | 'active' | 'done' | 'confirmed' | 'invalidated' | 'answered' | 'dropped'
 
