@@ -6,6 +6,7 @@ import {
   applyCall,
   countsOf,
   buildGraph,
+  parseConfig,
   buildHistory,
   graphAlt,
   graphSvg,
@@ -255,6 +256,30 @@ test('the ledger tool records entries and the pane draws them on every surface t
     expect(drawn).toContain('Pane has no background option')
     await ui.unmount()
   }
+})
+
+test('headers take the terminal colour unless brandAccent is on', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  await $.tool.call({ tool: TOOL, add: [{ kind: 'goal', text: 'Ship it' }] } as never)
+  const ui = await $.ui.mount({ plugin: 'intent-ledger', surface: 'terminal', component: 'Pane', requestId: 'intent-ledger', props: PANE_PROPS })
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('GOAL')
+  expect(drawn).not.toContain('"color":"claude"')
+  await ui.unmount()
+})
+
+test('brandAccent colours the headers', { options: { brandAccent: true } }, async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  await $.tool.call({ tool: TOOL, add: [{ kind: 'goal', text: 'Ship it' }] } as never)
+  const ui = await $.ui.mount({ plugin: 'intent-ledger', surface: 'terminal', component: 'Pane', requestId: 'intent-ledger', props: PANE_PROPS })
+  expect(JSON.stringify(await ui.drawn())).toContain('"color":"claude"')
+  await ui.unmount()
+})
+
+test('parseConfig defaults brandAccent off and reads it when set', async () => {
+  expect(parseConfig(undefined).brandAccent).toBe(false)
+  expect(parseConfig({ brandAccent: true }).brandAccent).toBe(true)
+  expect(parseConfig({ brandAccent: 'yes' }).brandAccent).toBe(false)
 })
 
 test('confirming an assumption from the pane reaches the next ledger result', async ($, on) => {

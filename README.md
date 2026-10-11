@@ -137,6 +137,7 @@ In `/config`, or under `pluginConfigs["intent-ledger"].options` in `settings.jso
 | `observePlans` | `true` | fold todo lists, tasks and approved plans into the plan |
 | `staleAfterTurns` | `3` | flag an open assumption stale after this many turns (`0` disables) |
 | `openOnStart` | `true` | open the pane when a session starts (wide terminals, desktop) |
+| `brandAccent` | `false` | colour the pane headers in Claude orange; off, they use your terminal's own text colour |
 | `statusLine` | `true` | show the summary in the status line |
 
 ## How it works

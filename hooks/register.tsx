@@ -321,9 +321,11 @@ export const register: Register = (on, options) => {
       }
     }
 
+    // Headers take the terminal's own foreground; the brand orange is opt-in (`brandAccent`).
+    const accent = cfg.brandAccent ? 'claude' : undefined
     const header = (label: string, extra: string) => (
       <Box flexDirection="row">
-        <Text bold color="claude">{label}</Text>
+        <Text bold color={accent}>{label}</Text>
         <Text dimColor wrap="truncate-end">{extra ? `  ${extra}` : ''}</Text>
       </Box>
     )
@@ -332,7 +334,7 @@ export const register: Register = (on, options) => {
     if (e.props.placement === 'inline') {
       const rows = [
         <Text wrap="truncate-end">
-          <Text bold color="claude">GOAL </Text>
+          <Text bold color={accent}>GOAL </Text>
           {goal ? goal.text : <Text dimColor>none logged yet</Text>}
         </Text>,
         now ? <Text wrap="truncate-end"><Text color="suggestion" bold>{'▸ NOW '}</Text>{now.text}</Text> : null,
@@ -489,7 +491,7 @@ export const register: Register = (on, options) => {
             {!Svg && graph.map(l => (
               <Text wrap="truncate-end" dimColor={l.entry.status === 'done' || l.entry.status === 'confirmed'}>
                 <Text color="subtle">{l.prefix}</Text>
-                <Text color={l.entry.status === 'invalidated' ? 'error' : l.entry.status === 'active' ? 'suggestion' : l.entry.kind === 'goal' ? 'claude' : undefined}>{`${l.glyph} `}</Text>
+                <Text color={l.entry.status === 'invalidated' ? 'error' : l.entry.status === 'active' ? 'suggestion' : l.entry.kind === 'goal' ? accent : undefined}>{`${l.glyph} `}</Text>
                 <Text dimColor>{`${l.entry.id} `}</Text>
                 {l.entry.text}
               </Text>
