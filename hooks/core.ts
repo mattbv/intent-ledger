@@ -45,6 +45,7 @@ export type Config = {
   staleAfterTurns: number
   openOnStart: boolean
   statusLine: boolean
+  brandAccent: boolean
 }
 
 export function parseConfig(options: Record<string, unknown> | undefined): Config {
@@ -58,6 +59,7 @@ export function parseConfig(options: Record<string, unknown> | undefined): Confi
     staleAfterTurns: stale,
     openOnStart: bool('openOnStart', true),
     statusLine: bool('statusLine', true),
+    brandAccent: bool('brandAccent', false),
   }
 }
 
