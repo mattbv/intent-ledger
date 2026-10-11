@@ -11,6 +11,8 @@ import {
   termColors,
   buildHistory,
   graphAlt,
+  touchedTag,
+  unlinkedCount,
   graphSvg,
   historySvg,
   withClosedTurns,
@@ -125,6 +127,56 @@ test('the SVGs escape entry text, stay bounded and carry the labels', async () =
   const big = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'G' }, ...many] }), STAMP)
   expect(graphSvg(buildGraph(big.entries)).length).toBeLessThan(131072)
   expect(historySvg(buildHistory(big.entries, 3)).length).toBeLessThan(131072)
+})
+
+test('the tree shows the reach of an invalidated assumption, the active path, folded branches and unlinked entries', async () => {
+  const extra = Array.from({ length: 6 }, (_, i) => ({ kind: 'step', text: `Later ${i}` }))
+  const a = applyCall(
+    DEFAULT_META,
+    [],
+    parseCall({
+      add: [
+        { kind: 'goal', text: 'G' },
+        { kind: 'step', text: 'Done parent' },
+        { kind: 'step', text: 'Done child one', of: '@2' },
+        { kind: 'step', text: 'Done child two', of: '@2' },
+        { kind: 'step', text: 'Working on it' },
+        { kind: 'assumption', text: 'Wrong guess', of: '@5' },
+        { kind: 'step', text: 'Rests on the guess', of: '@6' },
+        { kind: 'decision', text: 'Loose decision' },
+        ...extra,
+      ],
+    }),
+    STAMP,
+  )
+  const b = applyCall(a.meta, a.entries, parseCall({ resolve: [{ id: 'S1', status: 'done' }, { id: 'S2', status: 'done' }, { id: 'S3', status: 'done' }, { id: 'S4', status: 'active' }, { id: 'A1', status: 'invalidated' }] }), STAMP)
+  const list = b.entries
+  const find = (roots: ReturnType<typeof buildGraph>, id: string) => {
+    const hit = (n: (typeof roots)[number]): (typeof roots)[number] | null => (n.entry.id === id ? n : n.children.map(hit).find(Boolean) ?? null)
+    return roots.map(hit).find(Boolean) ?? null
+  }
+  const full = buildGraph(list, false)
+  expect(find(full, 'S4')?.touched).toEqual(['A1'])
+  expect(find(full, 'S5')?.touched).toEqual(['A1'])
+  expect(find(full, 'S1')?.touched).toEqual([])
+  expect(find(full, 'S4')?.onPath).toBe(true)
+  expect(find(full, 'S1')?.onPath).toBe(false)
+  expect(find(full, 'A1')?.onDamage).toBe(true)
+
+  const folded = buildGraph(list)
+  expect(find(folded, 'S1')?.hidden).toBe(2)
+  expect(find(folded, 'S1')?.children.length).toBe(0)
+  expect(find(folded, 'S4')?.children.length).toBe(1)
+  expect(buildGraph(list.slice(0, 5)).every(r => r.hidden === 0)).toBe(true)
+
+  expect(unlinkedCount(list)).toBe(1)
+  expect(touchedTag(['A1', 'A2', 'A3'])).toBe('⚠A1,A2+')
+  expect(graphLines(folded).find(l => l.entry.id === 'S4')?.tag).toBe('⚠A1')
+  const svg = graphSvg(folded, 480, undefined, 1)
+  expect(svg).toContain('class="eb"')
+  expect(svg).toContain('⚠A1')
+  expect(svg).toContain('not linked into the tree')
+  expect(graphAlt(full, 1)).toContain('affected by invalidated A1')
 })
 
 test('a cycle or a dropped parent never loops or resurrects a branch', async () => {

@@ -81,6 +81,7 @@ T5 main changed 3 files with nothing logged (routes.ts, …)
 | **Decisions** | choices between alternatives, with the reason |
 | **Structure** | a tree of the goal, its steps (and sub-steps), and the assumptions, decisions, findings, questions and risks the agent linked to them with `of` (an id, or `@N` for the Nth entry of the same call). Unlinked steps hang off the goal; other unlinked entries stay in their own sections |
 | **History** | entries against turns: `○` the turn one was logged, `───` while it stayed open, `✓` `✗` `×` the turn it settled (done or confirmed, invalidated, dropped). Shown once entries span two turns |
+| **Structure marks** | `⚠A1` on every node above or below an invalidated assumption (and a red edge on the path to it), a bold path from the goal to the active step, finished branches folded to `(+n)` once the tree passes 12 nodes, and an "n unlinked" count for entries the agent did not link |
 | **Findings** | facts the agent learned that settle no assumption (a limit, a cause, a surprise), with where it saw them |
 | **Open questions & risks** | what the agent is deferring or guessing on |
 | **Timeline** | your prompts, every entry logged or resolved, and a warning when a turn **changed files with nothing logged** |

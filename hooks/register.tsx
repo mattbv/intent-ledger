@@ -24,6 +24,7 @@ import {
   buildHistory,
   SVG_WIDTH,
   graphAlt,
+  unlinkedCount,
   graphSvg,
   historyAlt,
   historySvg,
@@ -393,7 +394,9 @@ export const register: Register = (on, options) => {
     const assumptions = sortedAssumptions(list)
     const shownAssumptions = assumptions.filter(a => a.status !== 'dropped').slice(0, 12)
     const steps = list.filter(x => x.kind === 'step' && x.status !== 'dropped')
-    const graph = graphLines(buildGraph(list))
+    const tree = buildGraph(list)
+    const graph = graphLines(tree)
+    const unlinked = unlinkedCount(list)
     // With the structure tree below, the plan keeps to what is active and next; the tree holds the rest.
     const stepsShown = graph.length > 1 ? steps.filter(s => s.status !== 'done').slice(0, 3) : [...steps.filter(s => s.status === 'done').slice(-2), ...steps.filter(s => s.status !== 'done')].slice(0, 10)
     const timelineShown = graph.length > 1 ? moments.filter(m => m.tone !== 'add') : moments
@@ -491,14 +494,16 @@ export const register: Register = (on, options) => {
 
         {graph.length > 1 && (
           <Box flexDirection="column">
-            {header('STRUCTURE', '')}
-            {Svg && <Svg source={graphSvg(buildGraph(list), SVG_WIDTH, pal)} alt={graphAlt(buildGraph(list))} />}
+            {header('STRUCTURE', unlinked > 0 ? `${unlinked} unlinked` : '')}
+            {Svg && <Svg source={graphSvg(tree, SVG_WIDTH, pal, unlinked)} alt={graphAlt(buildGraph(list, false), unlinked)} />}
             {!Svg && graph.map(l => (
-              <Text wrap="truncate-end" dimColor={l.entry.status === 'done' || l.entry.status === 'confirmed'}>
+              <Text wrap="truncate-end" dimColor={(l.entry.status === 'done' || l.entry.status === 'confirmed') && !l.onPath} bold={l.onPath}>
                 <Text color={K.subtle}>{l.prefix}</Text>
                 <Text color={l.entry.status === 'invalidated' ? K.error : l.entry.status === 'active' ? K.suggestion : l.entry.kind === 'goal' ? accent : undefined}>{`${l.glyph} `}</Text>
                 <Text dimColor>{`${l.entry.id} `}</Text>
+                {l.tag && <Text color={K.error}>{`${l.tag} `}</Text>}
                 {l.entry.text}
+                {l.hidden > 0 && <Text dimColor>{` (+${l.hidden})`}</Text>}
               </Text>
             ))}
           </Box>
