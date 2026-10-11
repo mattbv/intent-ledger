@@ -22,6 +22,8 @@ import {
   baseName,
   buildGraph,
   buildHistory,
+  graphSvg,
+  historySvg,
   clean,
   countsOf,
   currentGoal,
@@ -289,7 +291,10 @@ export const register: Register = (on, options) => {
   // ---------------------------------------------------------------- the pane
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const els = $.ui.resolve(e)
+    const { Box, Text, Button } = els
+    // Only the remote surfaces (desktop, VS Code, mobile) draw Svg; the terminal keeps the text layouts.
+    const Svg = e.surface === 'terminal' ? undefined : (els as unknown as { Svg?: (props: { source: string; alt: string }) => unknown }).Svg
     const [list, moments, t, fp, v, approved] = await Promise.all([getEntries($), getTimeline($), getTurn($), getFootprint($), getView($), getPlan($)])
     const width = Math.max(24, e.props.bodyColumns)
     const c = countsOf(list, t.n, cfg.staleAfterTurns)
@@ -394,7 +399,8 @@ export const register: Register = (on, options) => {
         {graph.length > 1 && (
           <Box flexDirection="column">
             {header('STRUCTURE', '')}
-            {graph.map(l => (
+            {Svg && <Svg source={graphSvg(buildGraph(list))} alt={`Structure: ${graph.map(l => `${l.entry.id} ${l.entry.text}`).join('; ')}`} />}
+            {!Svg && graph.map(l => (
               <Text wrap="truncate-end" dimColor={l.entry.status === 'done' || l.entry.status === 'confirmed'}>
                 <Text color="subtle">{l.prefix}</Text>
                 <Text color={l.entry.status === 'invalidated' ? 'error' : l.entry.status === 'active' ? 'suggestion' : l.entry.kind === 'goal' ? 'claude' : undefined}>{`${l.glyph} `}</Text>
@@ -408,11 +414,14 @@ export const register: Register = (on, options) => {
         {history.turns.length > 1 && history.rows.length > 1 && (
           <Box flexDirection="column">
             {header('HISTORY', `T${history.turns[0]}–T${history.turns[history.turns.length - 1]}`)}
+            {Svg && <Svg source={historySvg(history)} alt={`History over turns ${history.turns[0]} to ${history.turns[history.turns.length - 1]}: ${history.rows.map(r => `${r.entry.id} ${r.entry.status}`).join(', ')}`} />}
+            {!Svg && (
             <Text wrap="truncate-end" dimColor>
               {fitText('', labelWidth + 1)}
               {history.turns.map(n => String(n % 100).padStart(2).padEnd(HISTORY_CELL)).join('')}
             </Text>
-            {history.rows.map(r => (
+            )}
+            {!Svg && history.rows.map(r => (
               <Text wrap="truncate-end">
                 <Text dimColor>{fitText(`${r.entry.id} ${r.entry.text}`, labelWidth + 1)}</Text>
                 {r.cells.map(c => (

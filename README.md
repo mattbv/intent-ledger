@@ -87,6 +87,8 @@ T5 main changed 3 files with nothing logged (routes.ts, …)
 
 Inline (main-screen terminal), the pane collapses to a few-row summary: goal, assumption counts, the active step and the last few moments. The status line reads e.g. `ledger · 2 open assumptions · 1 stale · 1 ✗ · plan 2/5`.
 
+On the desktop app, VS Code and mobile, the Structure and History sections are drawn as SVG diagrams (a dark card, so they read on any theme); the terminal draws the same data as text.
+
 ### Steering from the pane
 
 Focus the pane (`ctrl+x tab`) and press an assumption to expand it: its reasoning, the note that resolved it, and three buttons:

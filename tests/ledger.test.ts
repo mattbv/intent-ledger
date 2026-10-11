@@ -7,6 +7,8 @@ import {
   countsOf,
   buildGraph,
   buildHistory,
+  graphSvg,
+  historySvg,
   withClosedTurns,
   fitStatus,
   graphLines,
@@ -94,6 +96,29 @@ test('closed turns are stamped once, cleared on reopen, and drawn as a turns gri
   expect(rowOf('S1')).toBe('○|───|✓|')
   expect(rowOf('A1')).toBe('○|───|✗|')
   expect(buildHistory(list, 4, 2).turns).toEqual([3, 4])
+})
+
+test('the SVGs escape entry text, stay bounded and carry the labels', async () => {
+  const a = applyCall(
+    DEFAULT_META,
+    [],
+    parseCall({ add: [{ kind: 'goal', text: 'Fix <b>"quotes"</b> & more' }, { kind: 'step', text: 'One', of: '@1' }, { kind: 'assumption', text: 'Maybe', of: '@2' }, { kind: 'decision', text: 'Pick' }] }),
+    STAMP,
+  )
+  const b = applyCall(a.meta, a.entries, parseCall({ resolve: [{ id: 'S1', status: 'done' }, { id: 'A1', status: 'invalidated' }] }), { ...STAMP, turn: 3 })
+  const list = withClosedTurns(a.entries, b.entries, 3)
+  const tree = graphSvg(buildGraph(list))
+  expect(tree.startsWith('<svg')).toBe(true)
+  expect(tree).toContain('Fix &lt;b&gt;&quot;quotes&quot;&lt;/b&gt; &amp; more')
+  expect(tree).not.toContain('<b>')
+  expect(tree).toContain('S1')
+  const grid = historySvg(buildHistory(list, 3))
+  expect(grid).toContain('A1')
+  expect(grid.endsWith('</svg>')).toBe(true)
+  const many = Array.from({ length: 300 }, (_, i) => ({ kind: 'step', text: `Step number ${i} with a fairly long description to pad the markup` }))
+  const big = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'G' }, ...many] }), STAMP)
+  expect(graphSvg(buildGraph(big.entries)).length).toBeLessThan(131072)
+  expect(historySvg(buildHistory(big.entries, 3)).length).toBeLessThan(131072)
 })
 
 test('a cycle or a dropped parent never loops or resurrects a branch', async () => {
@@ -216,7 +241,8 @@ test('the ledger tool records entries and the pane draws them on every surface t
     expect(drawn).toContain('Use passport over a hand-rolled JWT')
     expect(drawn).toContain('FINDINGS')
     expect(drawn).toContain('STRUCTURE')
-    expect(drawn).toContain('└─')
+    // The terminal draws the tree as text; the remote surfaces draw it as an SVG.
+    expect(drawn).toContain(surface === 'terminal' ? '└─' : '<svg')
     expect(drawn).not.toContain('HISTORY')
     expect(drawn).toContain('Pane has no background option')
     await ui.unmount()

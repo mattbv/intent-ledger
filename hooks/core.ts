@@ -569,6 +569,102 @@ export function fitText(text: string, width: number): string {
   return text.length > width ? `${text.slice(0, Math.max(0, width - 1))}…` : text.padEnd(width)
 }
 
+// ---------------------------------------------------------------- SVG for the remote surfaces
+
+/** Escape text for SVG/XML. */
+export function esc(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+// Each SVG carries its own dark card, so contrast never depends on how a surface themes or scales it.
+const SVG_STYLE =
+  '<style>.t{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#e6edf3}.d{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#8b949e}.e{stroke:#6e7681;fill:none;stroke-width:1.2}</style>'
+
+const svgCard = (width: number, height: number) => `<rect width="${width}" height="${height}" rx="8" fill="#0d1117"/>`
+
+function statusColor(status: Status): string {
+  if (status === 'done' || status === 'confirmed' || status === 'answered') return '#2da44e'
+  if (status === 'invalidated') return '#e5534b'
+  if (status === 'active') return '#388bfd'
+  if (status === 'dropped') return '#8c959f'
+  return '#bf8700'
+}
+
+export type GraphItem = { entry: Entry; depth: number; row: number; parentRow: number | null }
+
+/** The tree flattened to rows with their depth and their parent's row, capped at `max` rows. */
+export function graphLayout(roots: GraphNode[], max = 40): GraphItem[] {
+  const out: GraphItem[] = []
+  const walk = (n: GraphNode, depth: number, parentRow: number | null) => {
+    if (out.length >= max) return
+    const row = out.length
+    out.push({ entry: n.entry, depth, row, parentRow })
+    n.children.forEach(c => walk(c, depth + 1, row))
+  }
+  roots.forEach(r => walk(r, 0, null))
+  return out
+}
+
+export const SVG_WIDTH = 480
+const ROW = 24
+const INDENT = 22
+
+/** The structure tree as an SVG: a dot per entry coloured by status, elbow edges to its parent. */
+export function graphSvg(roots: GraphNode[], width = SVG_WIDTH): string {
+  const items = graphLayout(roots)
+  const height = items.length * ROW + 16
+  const x = (depth: number) => 14 + depth * INDENT
+  const y = (row: number) => 14 + row * ROW
+  const parts: string[] = []
+  for (const it of items) {
+    if (it.parentRow === null) continue
+    const parent = items[it.parentRow]
+    if (!parent) continue
+    parts.push(`<path class="e" d="M${x(parent.depth)} ${y(parent.row) + 6}V${y(it.row)}H${x(it.depth) - 6}"/>`)
+  }
+  for (const it of items) {
+    const e = it.entry
+    const cx = x(it.depth)
+    const cy = y(it.row)
+    const room = Math.max(8, Math.floor((width - cx - 20) / 7))
+    const label = e.text.length > room - e.id.length - 1 ? `${e.text.slice(0, Math.max(1, room - e.id.length - 2))}…` : e.text
+    const dim = e.status === 'done' || e.status === 'confirmed' || e.status === 'dropped'
+    const shape = e.kind === 'goal' ? `<rect x="${cx - 6}" y="${cy - 6}" width="12" height="12" rx="3" fill="${statusColor(e.status)}"/>` : e.kind === 'decision' ? `<rect x="${cx - 4.5}" y="${cy - 4.5}" width="9" height="9" transform="rotate(45 ${cx} ${cy})" fill="${statusColor(e.status)}"/>` : `<circle cx="${cx}" cy="${cy}" r="5" fill="${statusColor(e.status)}"/>`
+    parts.push(shape, `<text class="d" x="${cx + 12}" y="${cy + 4}">${esc(e.id)}</text>`, `<text class="${dim ? 'd' : 't'}" x="${cx + 12 + (e.id.length + 1) * 7}" y="${cy + 4}">${esc(label)}</text>`)
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${SVG_STYLE}${svgCard(width, height)}${parts.join('')}</svg>`
+}
+
+const CELL = 26
+const LABEL = 190
+
+/** The history grid as an SVG: a bar from the turn an entry was logged to the turn it settled. */
+export function historySvg(history: History): string {
+  const cols = history.turns.length
+  const width = LABEL + cols * CELL + 12
+  const height = 30 + history.rows.length * 22 + 8
+  const cx = (i: number) => LABEL + i * CELL + CELL / 2
+  const parts: string[] = []
+  history.turns.forEach((t, i) => parts.push(`<text class="d" x="${cx(i)}" y="14" text-anchor="middle">${t % 100}</text>`))
+  history.rows.forEach((r, ri) => {
+    const cy = 30 + ri * 22 + 8
+    const e = r.entry
+    const first = r.cells.findIndex(c => c.trim() !== '')
+    let last = -1
+    r.cells.forEach((c, i) => {
+      if (c.trim() !== '') last = i
+    })
+    const room = Math.floor((LABEL - 12) / 7)
+    const label = `${e.id} ${e.text}`
+    parts.push(`<text class="${isSettled(e.status) ? 'd' : 't'}" x="4" y="${cy + 4}">${esc(label.length > room ? `${label.slice(0, room - 1)}…` : label)}</text>`)
+    if (first < 0) return
+    if (last > first) parts.push(`<line class="e" x1="${cx(first)}" y1="${cy}" x2="${cx(last)}" y2="${cy}"/>`)
+    parts.push(`<circle cx="${cx(first)}" cy="${cy}" r="4" fill="${statusColor(first === last && isSettled(e.status) ? e.status : 'open')}"/>`)
+    if (isSettled(e.status) && last > first) parts.push(`<circle cx="${cx(last)}" cy="${cy}" r="6" fill="${statusColor(e.status)}"/><text x="${cx(last)}" y="${cy + 4}" text-anchor="middle" font-size="10" fill="#fff">${esc(endGlyph(e.status))}</text>`)
+  })
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${SVG_STYLE}${svgCard(width, height)}${parts.join('')}</svg>`
+}
+
 export function activeStep(entries: Entry[]): Entry | null {
   const s = entries.filter(e => e.kind === 'step' && e.status === 'active')
   return s[s.length - 1] ?? null
