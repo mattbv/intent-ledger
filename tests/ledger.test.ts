@@ -7,6 +7,7 @@ import {
   countsOf,
   buildGraph,
   buildHistory,
+  graphAlt,
   graphSvg,
   historySvg,
   withClosedTurns,
@@ -112,6 +113,8 @@ test('the SVGs escape entry text, stay bounded and carry the labels', async () =
   expect(tree).toContain('Fix &lt;b&gt;&quot;quotes&quot;&lt;/b&gt; &amp; more')
   expect(tree).not.toContain('<b>')
   expect(tree).toContain('S1')
+  expect(graphAlt(buildGraph(list))).toContain('A1, assumption under S1, invalidated')
+  expect(tree).toContain('font-weight="700"')
   const grid = historySvg(buildHistory(list, 3))
   expect(grid).toContain('A1')
   expect(grid.endsWith('</svg>')).toBe(true)
@@ -240,6 +243,11 @@ test('the ledger tool records entries and the pane draws them on every surface t
     expect(drawn).toContain('Users table has an email column')
     expect(drawn).toContain('Use passport over a hand-rolled JWT')
     expect(drawn).toContain('FINDINGS')
+    // What needs a decision comes before the diagrams.
+    expect(drawn.indexOf('ASSUMPTIONS')).toBeLessThan(drawn.indexOf('PLAN'))
+    expect(drawn.indexOf('PLAN')).toBeLessThan(drawn.indexOf('STRUCTURE'))
+    expect(drawn.indexOf('STRUCTURE')).toBeLessThan(drawn.indexOf('TIMELINE'))
+    expect(drawn).toContain('press a row to confirm or correct it')
     expect(drawn).toContain('STRUCTURE')
     // The terminal draws the tree as text; the remote surfaces draw it as an SVG.
     expect(drawn).toContain(surface === 'terminal' ? '└─' : '<svg')

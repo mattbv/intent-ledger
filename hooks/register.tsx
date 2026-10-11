@@ -22,7 +22,9 @@ import {
   baseName,
   buildGraph,
   buildHistory,
+  graphAlt,
   graphSvg,
+  historyAlt,
   historySvg,
   clean,
   countsOf,
@@ -333,14 +335,15 @@ export const register: Register = (on, options) => {
           <Text bold color="claude">GOAL </Text>
           {goal ? goal.text : <Text dimColor>none logged yet</Text>}
         </Text>,
+        now ? <Text wrap="truncate-end"><Text color="suggestion" bold>{'▸ NOW '}</Text>{now.text}</Text> : null,
         <Text wrap="truncate-end">
           <Text color="warning">{`${c.open} open`}</Text>
           <Text dimColor>{` · ${c.confirmed} ✓ · `}</Text>
           <Text color={c.invalidated > 0 ? 'error' : 'subtle'}>{`${c.invalidated} ✗`}</Text>
-          <Text dimColor>{c.stale > 0 ? ` · ${c.stale} stale` : ''}{c.steps > 0 ? ` · plan ${c.stepsDone}/${c.steps}` : ''}{c.questions > 0 ? ` · ${c.questions} questions` : ''}</Text>
+          <Text color="warning">{c.stale > 0 ? ` · ${c.stale} stale` : ''}</Text>
+          <Text dimColor>{c.steps > 0 ? ` · plan ${c.stepsDone}/${c.steps}` : ''}{c.questions > 0 ? ` · ${c.questions} questions` : ''}</Text>
         </Text>,
-        now ? <Text wrap="truncate-end"><Text color="suggestion">▸ </Text>{now.text}</Text> : null,
-        ...moments.slice(-3).map(m => <Text dimColor wrap="truncate-end">{`T${m.turn} ${m.who}: ${m.text}`}</Text>),
+        ...moments.slice(-1).map(m => <Text dimColor wrap="truncate-end">{`T${m.turn} ${m.who}: ${m.text}`}</Text>),
       ].filter(Boolean)
       return <Box flexDirection="column">{rows}</Box>
     }
@@ -350,16 +353,19 @@ export const register: Register = (on, options) => {
       const glyph = a.status === 'open' ? '?' : a.status === 'confirmed' ? '✓' : a.status === 'invalidated' ? '✗' : '–'
       const color = a.status === 'open' ? 'warning' : a.status === 'confirmed' ? 'success' : a.status === 'invalidated' ? 'error' : 'inactive'
       const stale = isStale(a, t.n, cfg.staleAfterTurns)
-      const metaBits = [a.confidence ?? '', `T${a.turn}`, a.who !== 'main' ? a.who : '', stale ? 'stale' : '', a.resolvedBy === 'you' ? 'by you' : ''].filter(Boolean).join(' · ')
-      const room = Math.max(8, width - metaBits.length - a.id.length - 6)
+      const metaBits = [a.confidence ?? '', `T${a.turn}`, a.who !== 'main' ? a.who : '', a.resolvedBy === 'you' ? 'by you' : ''].filter(Boolean).join(' · ')
+      // `stale` leads the claim as a badge so a narrow pane never cuts it off; the chevron says the row opens.
+      const room = Math.max(8, width - metaBits.length - a.id.length - (stale ? 14 : 6) - 2)
       const isOpen = v.expanded === a.id
       return (
         <Box flexDirection="column">
           <Button key={`row:${a.id}`} plain onPress={() => toggle(a.id)}>
             <Text color={color}>{glyph} </Text>
             <Text dimColor>{a.id} </Text>
+            {stale && <Text color="warning" bold>{'stale '}</Text>}
             <Text strikethrough={a.status === 'dropped'}>{shorten(a.text, room)}</Text>
-            <Text color={stale ? 'warning' : 'subtle'}>{metaBits ? `  ${metaBits}` : ''}</Text>
+            <Text color="subtle">{metaBits ? `  ${metaBits}` : ''}</Text>
+            <Text color="subtle">{isOpen ? '  ▾' : '  ▸'}</Text>
           </Button>
           {isOpen && (
             <Box flexDirection="column" paddingLeft={4}>
@@ -368,7 +374,7 @@ export const register: Register = (on, options) => {
               {a.note && <Text dimColor>note: {a.note}</Text>}
               <Box flexDirection="row" gap={1}>
                 {a.status !== 'confirmed' && <Button key={`ok:${a.id}`} label="✓ confirm" onPress={() => mark(a.id, 'confirmed')} />}
-                {a.status !== 'invalidated' && <Button key={`no:${a.id}`} label="✗ wrong" onPress={() => mark(a.id, 'invalidated')} />}
+                {a.status !== 'invalidated' && <Button key={`no:${a.id}`} label="✗ wrong (drafts a reply)" onPress={() => mark(a.id, 'invalidated')} />}
                 {a.status !== 'open' && <Button key={`re:${a.id}`} label="reopen" onPress={() => mark(a.id, 'open')} />}
               </Box>
             </Box>
@@ -380,8 +386,10 @@ export const register: Register = (on, options) => {
     const assumptions = sortedAssumptions(list)
     const shownAssumptions = assumptions.filter(a => a.status !== 'dropped').slice(0, 12)
     const steps = list.filter(x => x.kind === 'step' && x.status !== 'dropped')
-    const stepsShown = [...steps.filter(s => s.status === 'done').slice(-2), ...steps.filter(s => s.status !== 'done')].slice(0, 10)
     const graph = graphLines(buildGraph(list))
+    // With the structure tree below, the plan keeps to what is active and next; the tree holds the rest.
+    const stepsShown = graph.length > 1 ? steps.filter(s => s.status !== 'done').slice(0, 3) : [...steps.filter(s => s.status === 'done').slice(-2), ...steps.filter(s => s.status !== 'done')].slice(0, 10)
+    const timelineShown = graph.length > 1 ? moments.filter(m => m.tone !== 'add') : moments
     const labelWidth = Math.min(24, Math.max(12, width - 12 * HISTORY_CELL - 1))
     const history = buildHistory(list, t.n, Math.max(2, Math.min(12, Math.floor((width - labelWidth - 1) / HISTORY_CELL))))
     const decisions = list.filter(x => x.kind === 'decision' && x.status !== 'dropped').slice(-4)
@@ -394,50 +402,34 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           {header('GOAL', otherGoals > 0 ? `${otherGoals} earlier` : '')}
           {goal ? <Text>{goal.text}</Text> : <Text dimColor>No goal logged yet. The agent logs one when it starts a multi-step task.</Text>}
-        </Box>
-
-        {graph.length > 1 && (
-          <Box flexDirection="column">
-            {header('STRUCTURE', '')}
-            {Svg && <Svg source={graphSvg(buildGraph(list))} alt={`Structure: ${graph.map(l => `${l.entry.id} ${l.entry.text}`).join('; ')}`} />}
-            {!Svg && graph.map(l => (
-              <Text wrap="truncate-end" dimColor={l.entry.status === 'done' || l.entry.status === 'confirmed'}>
-                <Text color="subtle">{l.prefix}</Text>
-                <Text color={l.entry.status === 'invalidated' ? 'error' : l.entry.status === 'active' ? 'suggestion' : l.entry.kind === 'goal' ? 'claude' : undefined}>{`${l.glyph} `}</Text>
-                <Text dimColor>{`${l.entry.id} `}</Text>
-                {l.entry.text}
-              </Text>
-            ))}
-          </Box>
-        )}
-
-        {history.turns.length > 1 && history.rows.length > 1 && (
-          <Box flexDirection="column">
-            {header('HISTORY', `T${history.turns[0]}–T${history.turns[history.turns.length - 1]}`)}
-            {Svg && <Svg source={historySvg(history)} alt={`History over turns ${history.turns[0]} to ${history.turns[history.turns.length - 1]}: ${history.rows.map(r => `${r.entry.id} ${r.entry.status}`).join(', ')}`} />}
-            {!Svg && (
-            <Text wrap="truncate-end" dimColor>
-              {fitText('', labelWidth + 1)}
-              {history.turns.map(n => String(n % 100).padStart(2).padEnd(HISTORY_CELL)).join('')}
+          {now && (
+            <Text wrap="truncate-end">
+              <Text color="suggestion" bold>{'▸ NOW '}</Text>
+              {now.text}
             </Text>
-            )}
-            {!Svg && history.rows.map(r => (
-              <Text wrap="truncate-end">
-                <Text dimColor>{fitText(`${r.entry.id} ${r.entry.text}`, labelWidth + 1)}</Text>
-                {r.cells.map(c => (
-                  <Text color={c.includes('✗') ? 'error' : c.includes('✓') ? 'success' : 'subtle'}>{c}</Text>
-                ))}
-              </Text>
-            ))}
-          </Box>
-        )}
+          )}
+        </Box>
 
         <Box flexDirection="column">
           {header('ASSUMPTIONS', assumptions.length > 0 ? `${c.open} open · ${c.confirmed} ✓ · ${c.invalidated} ✗${c.stale > 0 ? ` · ${c.stale} stale` : ''}` : '')}
-          {shownAssumptions.length === 0 && <Text dimColor>None logged.</Text>}
+          {shownAssumptions.length === 0 && <Text dimColor>None logged yet. The agent adds them as it works.</Text>}
+          {c.open > 0 && v.expanded === null && <Text dimColor>press a row to confirm or correct it</Text>}
           {shownAssumptions.map(assumptionRow)}
           {assumptions.length > shownAssumptions.length && <Text dimColor>{`+${assumptions.length - shownAssumptions.length} more (/ledger copy for all)`}</Text>}
         </Box>
+
+        {openQs.length > 0 && (
+          <Box flexDirection="column">
+            {header('OPEN QUESTIONS & RISKS', '')}
+            {openQs.map(q => (
+              <Text wrap="truncate-end">
+                <Text color={q.kind === 'risk' ? 'error' : 'warning'}>{q.kind === 'risk' ? '! ' : '? '}</Text>
+                <Text dimColor>{q.id} </Text>
+                {q.text}
+              </Text>
+            ))}
+          </Box>
+        )}
 
         {(stepsShown.length > 0 || approved) && (
           <Box flexDirection="column">
@@ -481,7 +473,7 @@ export const register: Register = (on, options) => {
             {header('FINDINGS', '')}
             {findings.map(f => (
               <Text wrap="truncate-end">
-                <Text color="suggestion">• </Text>
+                <Text color="subtle">• </Text>
                 <Text dimColor>{f.id} </Text>
                 {f.text}
                 <Text dimColor>{f.why ? ` — ${f.why}` : ''}</Text>
@@ -490,23 +482,50 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
-        {openQs.length > 0 && (
+        {graph.length > 1 && (
           <Box flexDirection="column">
-            {header('OPEN QUESTIONS & RISKS', '')}
-            {openQs.map(q => (
-              <Text wrap="truncate-end">
-                <Text color={q.kind === 'risk' ? 'error' : 'warning'}>{q.kind === 'risk' ? '! ' : '? '}</Text>
-                <Text dimColor>{q.id} </Text>
-                {q.text}
+            {header('STRUCTURE', '')}
+            {Svg && <Svg source={graphSvg(buildGraph(list))} alt={graphAlt(buildGraph(list))} />}
+            {!Svg && graph.map(l => (
+              <Text wrap="truncate-end" dimColor={l.entry.status === 'done' || l.entry.status === 'confirmed'}>
+                <Text color="subtle">{l.prefix}</Text>
+                <Text color={l.entry.status === 'invalidated' ? 'error' : l.entry.status === 'active' ? 'suggestion' : l.entry.kind === 'goal' ? 'claude' : undefined}>{`${l.glyph} `}</Text>
+                <Text dimColor>{`${l.entry.id} `}</Text>
+                {l.entry.text}
               </Text>
             ))}
           </Box>
         )}
 
+        {history.turns.length > 1 && history.rows.length > 1 && (
+          <Box flexDirection="column">
+            {header('HISTORY', `T${history.turns[0]}–T${history.turns[history.turns.length - 1]}${history.turns[0] > 1 ? ` · last ${history.turns.length}` : ''}`)}
+            {Svg && <Svg source={historySvg(history)} alt={historyAlt(history)} />}
+            {!Svg && (
+            <Text wrap="truncate-end">
+              <Text dimColor>{fitText('', labelWidth + 1)}</Text>
+              {history.turns.map((n, i) => (
+                <Text dimColor={i < history.turns.length - 1} bold={i === history.turns.length - 1}>{String(n % 100).padStart(2).padEnd(HISTORY_CELL)}</Text>
+              ))}
+            </Text>
+            )}
+            {!Svg && history.rows.map(r => (
+              <Text wrap="truncate-end">
+                <Text>{`${r.entry.id} `}</Text>
+                <Text dimColor={r.entry.status !== 'open' && r.entry.status !== 'active'}>{fitText(r.entry.text, Math.max(0, labelWidth - r.entry.id.length))}</Text>
+                {r.cells.map(c => (
+                  <Text color={c.includes('✗') ? 'error' : c.includes('✓') ? 'success' : 'subtle'}>{c}</Text>
+                ))}
+              </Text>
+            ))}
+            {!Svg && <Text dimColor wrap="truncate-end">○ logged  ─ open  ✓ done  ✗ wrong  × dropped</Text>}
+          </Box>
+        )}
+
         <Box flexDirection="column">
           {header('TIMELINE', '')}
-          {moments.length === 0 && <Text dimColor>Nothing yet.</Text>}
-          {moments.slice(-10).map(m => (
+          {moments.length === 0 && <Text dimColor>Nothing yet: your prompts and ledger changes appear here.</Text>}
+          {timelineShown.slice(-10).map(m => (
             <Text wrap="truncate-end" color={m.tone === 'warn' ? 'warning' : undefined} dimColor={m.tone === 'info'}>
               <Text dimColor>{`T${m.turn} `}</Text>
               <Text color={m.who === 'you' ? 'suggestion' : 'subtle'}>{`${m.who} `}</Text>

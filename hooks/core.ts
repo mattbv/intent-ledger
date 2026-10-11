@@ -488,6 +488,13 @@ export function buildGraph(entries: Entry[]): GraphNode[] {
   return (kids.get(null) ?? []).map(e => grow(e, 0))
 }
 
+/** The marker glyph in the SVG: like the text one, but an open step is a ring and a finding an `i`, which read at that size. */
+export function svgGlyph(e: Entry): string {
+  if (e.kind === 'step' && e.status === 'open') return '○'
+  if (e.kind === 'finding') return 'i'
+  return graphGlyph(e)
+}
+
 export type GraphLine = { prefix: string; glyph: string; entry: Entry }
 
 const GLYPH_BY_KIND: Record<Kind, string> = { goal: '◎', assumption: '?', step: '·', decision: '◇', question: '?', risk: '!', finding: '•' }
@@ -580,7 +587,10 @@ export function esc(text: string): string {
 const SVG_STYLE =
   '<style>.t{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#e6edf3}.d{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#8b949e}.e{stroke:#6e7681;fill:none;stroke-width:1.2}</style>'
 
-const svgCard = (width: number, height: number) => `<rect width="${width}" height="${height}" rx="8" fill="#0d1117"/>`
+const svgCard = (width: number, height: number) => `<rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="8" fill="#0d1117" stroke="#30363d"/>`
+
+// Marker glyphs are dark on the status colours (all above 4.5:1), so a status never rests on colour alone.
+const MARK = '#0d1117'
 
 function statusColor(status: Status): string {
   if (status === 'done' || status === 'confirmed' || status === 'answered') return '#2da44e'
@@ -603,6 +613,22 @@ export function graphLayout(roots: GraphNode[], max = 40): GraphItem[] {
   }
   roots.forEach(r => walk(r, 0, null))
   return out
+}
+
+/** Alt text for the structure SVG: each entry with its kind, parent and status. */
+export function graphAlt(roots: GraphNode[]): string {
+  const items = graphLayout(roots)
+  const rows = items.map(it => {
+    const parent = it.parentRow === null ? null : items[it.parentRow]?.entry.id
+    return `${it.entry.id}, ${it.entry.kind}${parent ? ` under ${parent}` : ''}, ${it.entry.status}: ${it.entry.text}`
+  })
+  return `Structure: ${rows.join('; ')}`
+}
+
+/** Alt text for the history SVG. */
+export function historyAlt(history: History): string {
+  const rows = history.rows.map(r => `${r.entry.id} ${r.entry.status} (logged T${r.entry.turn}${r.entry.closedTurn !== null ? `, settled T${r.entry.closedTurn}` : ', still open'})`)
+  return `History, turns ${history.turns[0]} to ${history.turns[history.turns.length - 1]}: ${rows.join('; ')}`
 }
 
 export const SVG_WIDTH = 480
@@ -629,8 +655,15 @@ export function graphSvg(roots: GraphNode[], width = SVG_WIDTH): string {
     const room = Math.max(8, Math.floor((width - cx - 20) / 7))
     const label = e.text.length > room - e.id.length - 1 ? `${e.text.slice(0, Math.max(1, room - e.id.length - 2))}…` : e.text
     const dim = e.status === 'done' || e.status === 'confirmed' || e.status === 'dropped'
-    const shape = e.kind === 'goal' ? `<rect x="${cx - 6}" y="${cy - 6}" width="12" height="12" rx="3" fill="${statusColor(e.status)}"/>` : e.kind === 'decision' ? `<rect x="${cx - 4.5}" y="${cy - 4.5}" width="9" height="9" transform="rotate(45 ${cx} ${cy})" fill="${statusColor(e.status)}"/>` : `<circle cx="${cx}" cy="${cy}" r="5" fill="${statusColor(e.status)}"/>`
-    parts.push(shape, `<text class="d" x="${cx + 12}" y="${cy + 4}">${esc(e.id)}</text>`, `<text class="${dim ? 'd' : 't'}" x="${cx + 12 + (e.id.length + 1) * 7}" y="${cy + 4}">${esc(label)}</text>`)
+    const fill = statusColor(e.status)
+    const shape =
+      e.kind === 'goal'
+        ? `<rect x="${cx - 7}" y="${cy - 7}" width="14" height="14" rx="3" fill="${fill}"/>`
+        : e.kind === 'decision'
+          ? `<rect x="${cx - 5.5}" y="${cy - 5.5}" width="11" height="11" transform="rotate(45 ${cx} ${cy})" fill="${fill}"/>`
+          : `<circle cx="${cx}" cy="${cy}" r="7" fill="${fill}"/>`
+    const mark = e.kind === 'goal' || e.kind === 'decision' ? '' : `<text x="${cx}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${MARK}">${esc(svgGlyph(e))}</text>`
+    parts.push(shape, mark, `<text class="d" x="${cx + 14}" y="${cy + 4}">${esc(e.id)}</text>`, `<text class="${dim ? 'd' : 't'}" x="${cx + 14 + (e.id.length + 1) * 7}" y="${cy + 4}">${esc(label)}</text>`)
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${SVG_STYLE}${svgCard(width, height)}${parts.join('')}</svg>`
 }
@@ -641,27 +674,32 @@ const LABEL = 190
 /** The history grid as an SVG: a bar from the turn an entry was logged to the turn it settled. */
 export function historySvg(history: History): string {
   const cols = history.turns.length
-  const width = LABEL + cols * CELL + 12
-  const height = 30 + history.rows.length * 22 + 8
+  const width = Math.max(LABEL + cols * CELL + 12, 310)
+  const rowsTop = 30
+  const height = rowsTop + history.rows.length * 22 + 30
   const cx = (i: number) => LABEL + i * CELL + CELL / 2
   const parts: string[] = []
-  history.turns.forEach((t, i) => parts.push(`<text class="d" x="${cx(i)}" y="14" text-anchor="middle">${t % 100}</text>`))
+  // The current turn's column is lightly shaded, so "still open" reads as "open until now".
+  parts.push(`<rect x="${LABEL + (cols - 1) * CELL}" y="2" width="${CELL}" height="${height - 26}" rx="4" fill="#161b22"/>`)
+  history.turns.forEach((t, i) => parts.push(`<text class="${i === cols - 1 ? 't' : 'd'}" x="${cx(i)}" y="16" text-anchor="middle">${t % 100}</text>`))
   history.rows.forEach((r, ri) => {
-    const cy = 30 + ri * 22 + 8
+    const cy = rowsTop + ri * 22 + 8
     const e = r.entry
+    const settled = isSettled(e.status)
     const first = r.cells.findIndex(c => c.trim() !== '')
     let last = -1
     r.cells.forEach((c, i) => {
       if (c.trim() !== '') last = i
     })
-    const room = Math.floor((LABEL - 12) / 7)
-    const label = `${e.id} ${e.text}`
-    parts.push(`<text class="${isSettled(e.status) ? 'd' : 't'}" x="4" y="${cy + 4}">${esc(label.length > room ? `${label.slice(0, room - 1)}…` : label)}</text>`)
+    const room = Math.floor((LABEL - 12) / 7) - e.id.length - 1
+    const text = e.text.length > room ? `${e.text.slice(0, Math.max(1, room - 1))}…` : e.text
+    parts.push(`<text class="t" x="4" y="${cy + 4}">${esc(e.id)}</text><text class="${settled ? 'd' : 't'}" x="${4 + (e.id.length + 1) * 7}" y="${cy + 4}">${esc(text)}</text>`)
     if (first < 0) return
     if (last > first) parts.push(`<line class="e" x1="${cx(first)}" y1="${cy}" x2="${cx(last)}" y2="${cy}"/>`)
-    parts.push(`<circle cx="${cx(first)}" cy="${cy}" r="4" fill="${statusColor(first === last && isSettled(e.status) ? e.status : 'open')}"/>`)
-    if (isSettled(e.status) && last > first) parts.push(`<circle cx="${cx(last)}" cy="${cy}" r="6" fill="${statusColor(e.status)}"/><text x="${cx(last)}" y="${cy + 4}" text-anchor="middle" font-size="10" fill="#fff">${esc(endGlyph(e.status))}</text>`)
+    if (!settled || last > first) parts.push(`<circle cx="${cx(first)}" cy="${cy}" r="4" fill="${statusColor('open')}"/>`)
+    if (settled) parts.push(`<circle cx="${cx(last)}" cy="${cy}" r="7" fill="${statusColor(e.status)}"/><text x="${cx(last)}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${MARK}">${esc(endGlyph(e.status))}</text>`)
   })
+  parts.push(`<text class="d" x="4" y="${height - 10}"><tspan fill="${statusColor('open')}">●</tspan> logged  ── open  ✓ done  ✗ wrong  × dropped</text>`)
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${SVG_STYLE}${svgCard(width, height)}${parts.join('')}</svg>`
 }
 
