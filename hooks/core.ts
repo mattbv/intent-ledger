@@ -353,7 +353,7 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
     if (!old) continue
     const status = fitStatus(old.kind, r.status)
     if (!status) {
-      problems.push(`${r.id} is a ${old.kind}; it takes ${ALLOWED[old.kind].join(', ')}`)
+      problems.push(`${r.id} is ${/^[aeiou]/.test(old.kind) ? 'an' : 'a'} ${old.kind}; it takes ${ALLOWED[old.kind].join(', ')}`)
       continue
     }
     if (status === old.status && !r.note) continue
@@ -362,7 +362,7 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
     changed.push({ entry, from: old.status })
   }
 
-  // A newer active goal retires none by itself, but a step only one can be active at a time per agent.
+  // Only one step can be active at a time per agent: activating one sets the others back to open.
   for (const c of changed) {
     if (c.entry.kind === 'step' && c.entry.status === 'active') {
       list = list.map(e => (e.kind === 'step' && e.status === 'active' && e.id !== c.entry.id && e.who === c.entry.who && e.source === c.entry.source ? { ...e, status: 'open' as Status } : e))
@@ -962,10 +962,10 @@ export const INSTRUCTIONS = [
   '- Log an assumption whenever you are about to act on something you have not verified. Give a brief `why` and a `confidence`.',
   '- Log a decision when you choose between real alternatives, with the reason. Log open questions you are deferring or guessing on, and risks you notice.',
   '- Log a finding when you learn a fact that matters to the task and settles no assumption (a limit, a cause, a surprise), with where you saw it as `why`.',
-  '- Resolve entries as you learn: confirm or invalidate assumptions (say what you found in `note`), mark steps active and done, answer questions. If the plan changes, drop the stale steps and add the new ones.',
+  '- Resolve entries as you learn: confirm or invalidate assumptions (say what you found in `note`), mark steps active and done, answer questions. If the plan changes, drop the obsolete steps and add the new ones. When a goal is finished or abandoned, mark it done or dropped.',
   '- Steps hang off the goal in the pane\'s structure tree. To show how things relate, pass `of`: an id from an earlier result, or "@N" for the Nth entry of the same call ("@2" is the second), e.g. a sub-step of S2, or an assumption of the step it rests on.',
   '- If you keep a todo or task list, the ledger reads it; you need not repeat those steps.',
   '- Batch entries; one short line each. Skip the ledger for one-step requests and plain conversation.',
   '- The ledger is for transparency, not a substitute for asking: when a wrong guess would be costly, ask the user.',
-  '- If the user marks an assumption wrong in the pane, the next ledger result tells you; adjust your plan accordingly.',
+  '- If the user marks an assumption in the pane, the next ledger result tells you once; adjust your plan accordingly.',
 ].join('\n')

@@ -23,7 +23,8 @@ There is no documented single-test flag; to iterate on one case, narrow it tempo
 - `.claude-plugin/plugin.json` declares the plugin, its `userConfig` options (these must stay in sync with `parseConfig` in `hooks/core.ts` and the README table) and `"types": "./types/index.d.ts"`. `marketplace.json` makes the folder installable as its own marketplace.
 - `hooks/hooks.json` only lists the module entry point: `./register.tsx`.
 - `hooks/core.ts` is **pure**: reducers (`applyCall`, `syncTodos`, `markByYou`, ...), input validation (`parseCall`, `normalize*`), status/summary helpers and `toMarkdown`. It must stay free of host imports so it can be unit-tested directly.
-- `hooks/register.tsx` is the host-facing layer: registers the `mcp__intent-ledger__ledger` tool, the system-prompt section (`INSTRUCTIONS`), observers for `TodoWrite` / `TaskCreate` / `TaskUpdate` / `ExitPlanMode` / edit tools, per-turn bookkeeping, the `/ledger` command, status line and the pane UI. It wires `core.ts` functions to atoms (`atom`, `read`, `update`).
+- `hooks/register.tsx` is the host-facing layer: registers the `mcp__intent-ledger__ledger` tool (auto-allowed by a `tool.check` hook when `autoAllow` is on), the system-prompt section (`INSTRUCTIONS`), observers for `TodoWrite` / `TaskCreate` / `TaskUpdate` / `ExitPlanMode` / edit tools, per-turn bookkeeping, the `/ledger` command, status line and the pane UI. It wires `core.ts` functions to atoms (`atom`, `read`, `update`).
+- `hooks/palettes.ts` is pure colour data (`palette` option); `termColors` and the SVG builders in `core.ts` take a palette.
 - `types/index.d.ts` is the shared state contract (`Entry`, `Status`, `Moment`, `Turn`, `Footprint`, `View`, ...). Change it first when altering state shape, and update the `normalize*` functions so previously stored state still loads (`SCHEMA_VERSION`).
 
 ### Invariants worth knowing
@@ -32,7 +33,7 @@ There is no documented single-test flag; to iterate on one case, narrow it tempo
 - `Entry.of` links an entry to what it serves (an id, or `@N` for the Nth entry of the same `add` list, resolved in `applyCall`); `Entry.closedTurn` is stamped by `withClosedTurns` at every site in `register.tsx` that writes entries. `buildGraph`/`graphLines`/`buildHistory` and the SVG builders (`graphSvg`, `historySvg`) are pure and live in `core.ts`; the pane uses Svg only when `e.surface !== 'terminal'`.
 - Every change to the entries goes through `mutate` in `register.tsx` (one `update` that reads the latest list; counters merge by maximum and `nextId` skips taken ids), so parallel tool calls cannot overwrite each other. Text from the agent passes through `clean`/`stripUnsafe` before it is stored, and `esc` before it reaches SVG.
 - State lives in session state (`$.state`) and dies with the session; `/clear` resets it.
-- Entry `source` is `agent` | `observed` | `you`. User marks from the pane (confirm / wrong / reopen) are surfaced back to the agent in its next ledger tool result, and "wrong" only drafts text in the user's prompt box; nothing is sent automatically.
+- Entry `source` is `agent` | `observed` | `you`. User marks from the pane (confirm / wrong / reopen) are surfaced back to the agent once, in its next ledger tool result (`Meta.reportedAt`), and "wrong" only drafts text in the user's prompt box; nothing is sent automatically.
 - Status vocabulary differs per kind (see the `Status` doc comment in `types/index.d.ts`).
 - "Changed files with nothing logged" compares edit footprint against ledger activity per turn.
 

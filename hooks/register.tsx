@@ -347,7 +347,7 @@ export const register: Register = (on, options) => {
       if (hit.status === 'invalidated') {
         // A draft in the person's own prompt box: they decide whether and how to tell the agent.
         await $.prompt.fill({ text: `Assumption ${hit.id} ("${shorten(hit.text, 80)}") is wrong: `, mode: 'append' }).catch(() => undefined)
-        $.ui.toast('A correction is drafted in your prompt: finish it and send.')
+        $.ui.toast('A reply is drafted in your prompt: finish it and send.')
       }
     }
 
