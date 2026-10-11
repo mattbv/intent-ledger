@@ -5,7 +5,9 @@ import {
   TOOL,
   applyCall,
   countsOf,
+  buildGraph,
   fitStatus,
+  graphLines,
   parseCall,
   statusLine,
   syncTodos,
@@ -24,6 +26,42 @@ const PANE_PROPS = {
 }
 
 // ---------------------------------------------------------------- pure behaviour
+
+test('the structure graph hangs steps off the goal and links entries through `of`', async () => {
+  const at = (items: Array<Record<string, unknown>>, meta = DEFAULT_META, entries: ReturnType<typeof applyCall>['entries'] = []) =>
+    applyCall(meta, entries, parseCall({ add: items }), STAMP)
+  const a = at([
+    { kind: 'goal', text: 'Ship it' },
+    { kind: 'step', text: 'Read code' },
+    { kind: 'step', text: 'Write code' },
+    { kind: 'assumption', text: 'Loose assumption' },
+  ])
+  const b = at(
+    [
+      { kind: 'step', text: 'Add tests', of: 'S2' },
+      { kind: 'assumption', text: 'Runner is bun', of: 'S2' },
+      { kind: 'decision', text: 'Lost link', of: 'S99' },
+    ],
+    a.meta,
+    a.entries,
+  )
+  expect(b.problems.join(' ')).toContain('no entry S99')
+  const lines = graphLines(buildGraph(b.entries)).map(l => `${l.prefix}${l.glyph} ${l.entry.id}`)
+  expect(lines).toEqual(['◎ G1', '├─ · S1', '└─ · S2', '   ├─ · S3', '   └─ ? A2'])
+})
+
+test('a cycle or a dropped parent never loops or resurrects a branch', async () => {
+  const a = applyCall(
+    DEFAULT_META,
+    [],
+    parseCall({ add: [{ kind: 'goal', text: 'G' }, { kind: 'step', text: 'One' }, { kind: 'step', text: 'Two', of: 'S1' }] }),
+    STAMP,
+  )
+  const cyc = a.entries.map(e => (e.id === 'S1' ? { ...e, of: 'S2' } : e))
+  expect(graphLines(buildGraph(cyc)).length).toBeLessThan(10)
+  const dropped = a.entries.map(e => (e.id === 'S1' ? { ...e, status: 'dropped' as const } : e))
+  expect(graphLines(buildGraph(dropped)).map(l => l.entry.id)).toEqual(['G1', 'S2'])
+})
 
 test('parseCall keeps valid entries and names what it refused', async () => {
   const call = parseCall({
@@ -119,9 +157,10 @@ test('the ledger tool records entries and the pane draws them on every surface t
       { kind: 'assumption', text: 'Users table has an email column', why: 'schema.sql', confidence: 'high' },
       { kind: 'decision', text: 'Use passport over a hand-rolled JWT', why: 'fewer moving parts' },
       { kind: 'finding', text: 'Pane has no background option', why: 'claude-code.d.ts' },
+      { kind: 'step', text: 'Wire passport strategy' },
     ],
   } as never)
-  expect(String((ran as { result?: unknown }).result)).toContain('Logged G1, A1, D1, F1')
+  expect(String((ran as { result?: unknown }).result)).toContain('Logged G1, A1, D1, F1, S1')
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'intent-ledger', surface, component: 'Pane', requestId: 'intent-ledger', props: PANE_PROPS })
@@ -130,6 +169,8 @@ test('the ledger tool records entries and the pane draws them on every surface t
     expect(drawn).toContain('Users table has an email column')
     expect(drawn).toContain('Use passport over a hand-rolled JWT')
     expect(drawn).toContain('FINDINGS')
+    expect(drawn).toContain('STRUCTURE')
+    expect(drawn).toContain('└─')
     expect(drawn).toContain('Pane has no background option')
     await ui.unmount()
   }
