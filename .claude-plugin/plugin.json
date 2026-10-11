@@ -1,0 +1,56 @@
+{
+  "name": "intent-ledger",
+  "version": "0.1.0",
+  "description": "Intent Ledger: a live pane of what the agent is aiming for, assuming, planning and deciding, so you can watch its intent and correct a wrong assumption early",
+  "author": {
+    "name": "Matheus Boni Vicari"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "claude-code-mod",
+    "observability",
+    "assumptions",
+    "planning",
+    "agent-intent"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "instructAgent": {
+      "title": "Ask the agent to keep the ledger",
+      "description": "Add a short system-prompt section asking the agent to log its goal, assumptions, plan, decisions and open questions through the ledger tool",
+      "type": "boolean",
+      "default": true
+    },
+    "autoAllow": {
+      "title": "Allow the ledger tool without asking",
+      "description": "The ledger tool only writes to this pane. When on, its calls skip the permission prompt; every other tool is untouched",
+      "type": "boolean",
+      "default": true
+    },
+    "observePlans": {
+      "title": "Read visible plans",
+      "description": "Fold todo lists, task lists and approved plan-mode plans into the ledger's plan",
+      "type": "boolean",
+      "default": true
+    },
+    "staleAfterTurns": {
+      "title": "Stale after (turns)",
+      "description": "An assumption still unverified this many turns after it was logged is flagged stale (0 turns the flag off)",
+      "type": "number",
+      "default": 3
+    },
+    "openOnStart": {
+      "title": "Open on start",
+      "description": "Open the pane when a session starts (wide terminals and the desktop app)",
+      "type": "boolean",
+      "default": true
+    },
+    "statusLine": {
+      "title": "Status line",
+      "description": "Show open assumptions, rejections and plan progress in the status line",
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

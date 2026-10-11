@@ -1,0 +1,13 @@
+{
+  "name": "intent-ledger",
+  "description": "Intent Ledger: a live pane of the agent's goal, assumptions, plan and decisions",
+  "owner": {
+    "name": "Matheus Boni Vicari"
+  },
+  "plugins": [
+    {
+      "name": "intent-ledger",
+      "source": "./"
+    }
+  ]
+}
