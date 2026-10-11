@@ -8,7 +8,7 @@ export type Kind = 'goal' | 'assumption' | 'step' | 'decision' | 'question' | 'r
  */
 export type Status = 'open' | 'active' | 'done' | 'confirmed' | 'invalidated' | 'answered' | 'dropped'
 
-/** agent: logged through the ledger tool. observed: read off a todo list, task list or plan. you: set from the pane. */
+/** agent: logged through the ledger tool. observed: read off a todo list or task list. you: set from the pane. */
 export type Source = 'agent' | 'observed' | 'you'
 
 export type Confidence = 'low' | 'medium' | 'high'

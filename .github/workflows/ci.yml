@@ -1,0 +1,26 @@
+# Checks that need no Claude Code CLI. `claude plugin validate` and `claude plugin test` need the
+# CLI (the `claude-code/testing` module is provided by it), so run those locally before a release.
+name: manifest check
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JSON manifests parse
+        run: |
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
+            python3 -m json.tool "$f" > /dev/null && echo "ok $f"
+          done
+      - name: every plugin.json option is documented in the README
+        run: |
+          for k in $(python3 -c "import json;print(' '.join(json.load(open('.claude-plugin/plugin.json'))['userConfig']))"); do
+            grep -q "\`$k\`" README.md || { echo "README missing option $k"; exit 1; }
+          done
+      - name: CHANGELOG mentions the current version
+        run: |
+          v=$(python3 -c "import json;print(json.load(open('.claude-plugin/plugin.json'))['version'])")
+          grep -q "^## \[$v\]" CHANGELOG.md || { echo "CHANGELOG has no entry for $v"; exit 1; }

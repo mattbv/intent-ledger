@@ -1,6 +1,6 @@
 {
   "name": "intent-ledger",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Intent Ledger: a live pane of what the agent is aiming for, assuming, planning and deciding, so you can watch its intent and correct a wrong assumption early",
   "author": {
     "name": "Matheus Boni Vicari"
@@ -18,7 +18,7 @@
   "userConfig": {
     "instructAgent": {
       "title": "Ask the agent to keep the ledger",
-      "description": "Add a short system-prompt section asking the agent to log its goal, assumptions, plan, decisions and open questions through the ledger tool",
+      "description": "Add a short system-prompt section asking the agent to log its goal, assumptions, plan, decisions, questions, risks and findings through the ledger tool. Also needed for the 'changed files with nothing logged' warning",
       "type": "boolean",
       "default": true
     },
@@ -55,13 +55,13 @@
     },
     "brandAccent": {
       "title": "Brand accent on headers",
-      "description": "Colour the pane headers in Claude orange. Off, headers use your terminal's own text colour",
+      "description": "With the default palette, colour the pane headers in Claude orange. Off, headers use your terminal's own text colour (named palettes use their own accent)",
       "type": "boolean",
       "default": false
     },
     "statusLine": {
       "title": "Status line",
-      "description": "Show open assumptions, rejections and plan progress in the status line",
+      "description": "Show open and stale assumptions, invalidated ones, plan progress and open questions in the status line",
       "type": "boolean",
       "default": true
     }
