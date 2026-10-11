@@ -51,7 +51,12 @@ export type Footprint = { files: string[]; unloggedTurns: number[] }
 
 export type View = { expanded: string | null }
 
-export type Meta = { schemaVersion: number; seq: Record<Kind, number> }
+export type Meta = {
+  schemaVersion: number
+  seq: Record<Kind, number>
+  /** When the agent was last told about the user's pane marks, so each mark is reported once. */
+  reportedAt: number
+}
 
 declare module 'claude-code' {
   interface PluginState {

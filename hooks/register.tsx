@@ -41,12 +41,14 @@ import {
   normalize,
   normalizeEntries,
   normalizeFootprint,
+  mergeMeta,
   normalizeMeta,
   normalizeTimeline,
   normalizeTurn,
   parseCall,
   parseConfig,
   shorten,
+  stripUnsafe,
   sortedAssumptions,
   statusLine,
   syncTodos,
@@ -76,6 +78,27 @@ const view = atom({ plugin: 'intent-ledger', key: 'view' } as const, DEFAULT_VIE
 
 const getMeta = async ($: EngineInterface): Promise<Meta> => normalizeMeta(await read($, meta))
 const getEntries = async ($: EngineInterface): Promise<Entry[]> => normalizeEntries(await read($, entries))
+/**
+ * Apply one change to the entries inside a single `update`, so it reads the latest list and a
+ * concurrent writer's change is not overwritten. Counters merge by maximum afterwards.
+ */
+async function mutate<T>($: EngineInterface, turnNo: number, fn: (list: Entry[], m: Meta) => { entries: Entry[]; meta?: Meta; out: T }): Promise<T> {
+  const m = await getMeta($)
+  let result: { entries: Entry[]; meta?: Meta; out: T } | undefined
+  await update($, entries, cur => {
+    const list = normalizeEntries(cur)
+    result = fn(list, m)
+    return withClosedTurns(list, result.entries, turnNo)
+  })
+  const done = result as { entries: Entry[]; meta?: Meta; out: T } | undefined
+  if (!done) throw new Error('intent-ledger: the entries update did not run')
+  if (done.meta) {
+    const next = done.meta
+    await update($, meta, cur => mergeMeta(normalizeMeta(cur), next))
+  }
+  return done.out
+}
+
 const getTimeline = async ($: EngineInterface): Promise<Moment[]> => normalizeTimeline(await read($, timeline))
 const getTurn = async ($: EngineInterface): Promise<Turn> => normalizeTurn(await read($, turn))
 const getFootprint = async ($: EngineInterface): Promise<Footprint> => normalizeFootprint(await read($, footprint))
@@ -190,10 +213,11 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: 'mcp__intent-ledger__ledger' }, async ($, e) => {
     const call = parseCall(e as unknown)
     const stamp = await stampFor($, e.agentId, 'agent')
-    const [m, list] = await Promise.all([getMeta($), getEntries($)])
-    const applied = applyCall(m, list, call, stamp)
-    await update($, meta, () => applied.meta)
-    await update($, entries, () => withClosedTurns(list, applied.entries, stamp.turn))
+    const since = (await getMeta($)).reportedAt
+    const applied = await mutate($, stamp.turn, (list, m) => {
+      const a = applyCall(m, list, call, stamp)
+      return { entries: a.entries, meta: a.meta, out: a }
+    })
     await note($, momentsFor(applied, stamp))
     if (applied.added.length + applied.changed.length > 0) {
       await update($, turn, t => ({ ...normalizeTurn(t), logged: normalizeTurn(t).logged + 1 }))
@@ -202,7 +226,8 @@ export const register: Register = (on, options) => {
       $.ui.toast(`${PLUGIN}: an assumption was invalidated`)
     }
     await refreshStatus($, cfg)
-    return { result: toolReply(applied, applied.entries) }
+    await update($, meta, cur => mergeMeta(normalizeMeta(cur), { ...DEFAULT_META, reportedAt: stamp.at }))
+    return { result: toolReply(applied, applied.entries, since) }
   })
 
   // Visible actions: edits for the footprint, and todo lists, tasks and approved plans for the plan.
@@ -231,20 +256,20 @@ export const register: Register = (on, options) => {
 
     if (name === 'TodoWrite') {
       const stamp = await stampFor($, e.agentId, 'observed')
-      const [m, list] = await Promise.all([getMeta($), getEntries($)])
-      const synced = syncTodos(m, list, listOf<Todo>(input.todos), stamp)
-      await update($, meta, () => synced.meta)
-      await update($, entries, () => withClosedTurns(list, synced.entries, stamp.turn))
+      const synced = await mutate($, stamp.turn, (list, m) => {
+        const r = syncTodos(m, list, listOf<Todo>(input.todos), stamp)
+        return { entries: r.entries, meta: r.meta, out: r }
+      })
       if (synced.summary) await note($, [moment(stamp, synced.summary, 'info')])
       await refreshStatus($, cfg)
     } else if (name === 'TaskCreate') {
       const task = (ran.result as { task?: { id?: unknown; subject?: unknown } } | undefined)?.task
       if (task && typeof task.id === 'string') {
         const stamp = await stampFor($, e.agentId, 'observed')
-        const [m, list] = await Promise.all([getMeta($), getEntries($)])
-        const added = addTask(m, list, task.id, String(task.subject ?? input.subject ?? ''), stamp)
-        await update($, meta, () => added.meta)
-        await update($, entries, () => withClosedTurns(list, added.entries, stamp.turn))
+        await mutate($, stamp.turn, (list, m) => {
+          const r = addTask(m, list, task.id as string, String(task.subject ?? input.subject ?? ''), stamp)
+          return { entries: r.entries, meta: r.meta, out: null }
+        })
         await refreshStatus($, cfg)
       }
     } else if (name === 'TaskUpdate' && typeof input.taskId === 'string') {
@@ -310,12 +335,13 @@ export const register: Register = (on, options) => {
     const toggle = (id: string) => update($, view, x => ({ expanded: normalize(DEFAULT_VIEW, x).expanded === id ? null : id }))
     const mark = async (id: string, status: Status) => {
       const at = await $.clock.now()
-      const cur = await getEntries($)
-      const res = markByYou(cur, id, status, at)
-      if (!res.entry) return
-      const hit: Entry = res.entry
       const turnNow = (await getTurn($)).n
-      await update($, entries, () => withClosedTurns(cur, res.entries, turnNow))
+      const found = await mutate($, turnNow, cur => {
+        const res = markByYou(cur, id, status, at)
+        return { entries: res.entries, out: res.entry }
+      })
+      if (!found) return
+      const hit: Entry = found
       await note($, [moment({ at, turn: turnNow, who: 'you' }, `marked ${hit.id} ${hit.status}`, 'you')])
       await refreshStatus($, cfg)
       if (hit.status === 'invalidated') {
@@ -459,7 +485,7 @@ export const register: Register = (on, options) => {
             )}
             {approved && v.expanded === 'plan' && (
               <Box paddingLeft={2} flexDirection="column">
-                {approved.text.split('\n').slice(0, 40).map(line => <Text dimColor>{line}</Text>)}
+                {approved.text.split('\n').slice(0, 40).map(line => <Text dimColor wrap="truncate-end">{shorten(stripUnsafe(line), 200)}</Text>)}
               </Box>
             )}
           </Box>

@@ -29,7 +29,7 @@ export function startOf(kind: Kind): Status {
   return ALLOWED[kind][0] ?? 'open'
 }
 
-export const DEFAULT_META: Meta = { schemaVersion: SCHEMA_VERSION, seq: { goal: 0, assumption: 0, step: 0, decision: 0, question: 0, risk: 0, finding: 0 } }
+export const DEFAULT_META: Meta = { schemaVersion: SCHEMA_VERSION, seq: { goal: 0, assumption: 0, step: 0, decision: 0, question: 0, risk: 0, finding: 0 }, reportedAt: 0 }
 export const DEFAULT_TURN: Turn = { n: 0, startedAt: 0, logged: 0, edits: [], isRunning: false }
 export const DEFAULT_FOOTPRINT: Footprint = { files: [], unloggedTurns: [] }
 export const DEFAULT_VIEW: View = { expanded: null }
@@ -80,7 +80,14 @@ export function normalize<T extends object>(defaults: T, x: unknown): T {
 
 export function normalizeMeta(x: unknown): Meta {
   const m = normalize(DEFAULT_META, x)
-  return { schemaVersion: m.schemaVersion, seq: normalize(DEFAULT_META.seq, m.seq) }
+  return { schemaVersion: m.schemaVersion, seq: normalize(DEFAULT_META.seq, m.seq), reportedAt: typeof m.reportedAt === 'number' ? m.reportedAt : 0 }
+}
+
+/** Two counters, whichever is further along per kind: writers that each held an older copy still agree. */
+export function mergeMeta(a: Meta, b: Meta): Meta {
+  const seq = { ...a.seq }
+  for (const k of KINDS) seq[k] = Math.max(a.seq[k] ?? 0, b.seq[k] ?? 0)
+  return { schemaVersion: Math.max(a.schemaVersion, b.schemaVersion), seq, reportedAt: Math.max(a.reportedAt, b.reportedAt) }
 }
 
 export function normalizeEntry(x: unknown): Entry | null {
@@ -130,15 +137,28 @@ export function normalizeFootprint(x: unknown): Footprint {
 
 // ---------------------------------------------------------------- text
 
+// Control characters, bidi overrides and zero-width marks, lone surrogates, and the two non-characters.
+// Agent text can come from untrusted files, and it reaches a terminal and SVG markup.
+const UNSAFE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff\ufffe\uffff]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g
+
+export function stripUnsafe(s: string): string {
+  return s.replace(UNSAFE, '')
+}
+
+/** `s` cut to `n` code points (never mid-pair), ending in an ellipsis when cut. */
+export function clip(s: string, n: number): string {
+  const cps = Array.from(s)
+  if (cps.length <= n) return s
+  return n <= 1 ? (cps.length > 0 ? '…' : '') : `${cps.slice(0, n - 1).join('')}…`
+}
+
 export function clean(s: unknown, max = MAX_TEXT): string {
   if (typeof s !== 'string') return ''
-  const one = s.replace(/\s+/g, ' ').trim()
-  return one.length > max ? one.slice(0, max - 1) + '…' : one
+  return clip(stripUnsafe(s.replace(/\s+/g, ' ')).trim(), max)
 }
 
 export function shorten(s: string, n: number): string {
-  if (n <= 1) return s.length > 0 ? '…' : ''
-  return s.length > n ? s.slice(0, n - 1) + '…' : s
+  return clip(s, n)
 }
 
 export function ago(ms: number): string {
@@ -240,8 +260,11 @@ export function parseCall(input: unknown): ParsedCall {
 
 export type Stamp = { at: number; turn: number; who: string; source: Source }
 
-export function nextId(meta: Meta, kind: Kind): { id: string; meta: Meta } {
-  const n = (meta.seq[kind] ?? 0) + 1
+/** The next id of a kind. Ids already in `taken` are skipped, so two writers holding the same counter never mint one id twice. */
+export function nextId(meta: Meta, kind: Kind, taken: readonly Entry[] = []): { id: string; meta: Meta } {
+  const used = new Set(taken.map(e => e.id))
+  let n = (meta.seq[kind] ?? 0) + 1
+  while (used.has(`${PREFIX[kind]}${n}`)) n += 1
   return { id: `${PREFIX[kind]}${n}`, meta: { ...meta, seq: { ...meta.seq, [kind]: n } } }
 }
 
@@ -277,13 +300,20 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
   // `of: "@N"` names the Nth entry of this call's `add` list, so a tree can be built in one call.
   const byPos = new Map<number, string>()
   for (const item of call.add) {
-    // The same open text logged twice is one entry.
-    const dup = list.find(e => e.kind === item.kind && e.text === item.text && e.status !== 'dropped')
+    const target = (): string | undefined => {
+      const pos = item.of ? /^@(\d+)$/.exec(item.of) : null
+      return pos ? byPos.get(Number(pos[1])) : list.find(e => e.id === item.of)?.id
+    }
+    // The same text logged again while the first is still unsettled, by the same writer, is one entry;
+    // a repeat of something already finished is new work. A repeat may still say what it rests on.
+    const dup = list.find(e => e.kind === item.kind && e.text === item.text && e.who === stamp.who && !isSettled(e.status))
     if (dup) {
       byPos.set(item.pos, dup.id)
+      const to = item.of ? target() : undefined
+      if (to && !dup.of && to !== dup.id) list = list.map(e => (e.id === dup.id ? { ...e, of: to } : e))
       continue
     }
-    const next = nextId(m, item.kind)
+    const next = nextId(m, item.kind, list)
     m = next.meta
     const entry: Entry = {
       id: next.id,
@@ -304,9 +334,8 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
       closedTurn: null,
     }
     if (item.of) {
-      const at = /^@(\d+)$/.exec(item.of)
-      const target = at ? byPos.get(Number(at[1])) : list.find(e => e.id === item.of)?.id
-      if (target && target !== entry.id) entry.of = target
+      const to = target()
+      if (to && to !== entry.id) entry.of = to
       else problems.push(`no entry ${item.of} to link ${next.id} to`)
     }
     byPos.set(item.pos, entry.id)
@@ -343,18 +372,35 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
   return { meta: m, entries: trimEntries(list), added, changed, problems }
 }
 
-/** Keep the list bounded: drop the oldest settled entries first, never an open one. */
+/** Hard ceiling: past this, even open entries go, oldest first. */
+export const HARD_MAX_ENTRIES = MAX_ENTRIES + 100
+
+/**
+ * Keep the list bounded. Settled entries go first, oldest first, those nothing links to before those
+ * something does (their children are re-parented, not orphaned); the current goal is never dropped.
+ * Open entries only go past the hard ceiling, so the list cannot grow without bound.
+ */
 export function trimEntries(list: Entry[]): Entry[] {
   if (list.length <= MAX_ENTRIES) return list
-  const settled = new Set(['done', 'confirmed', 'answered', 'dropped'])
-  let over = list.length - MAX_ENTRIES
-  return list.filter(e => {
-    if (over > 0 && settled.has(e.status)) {
-      over -= 1
-      return false
+  let out = list
+  const goal = currentGoal(list)
+  const drop = (victim: Entry) => {
+    out = out.filter(e => e.id !== victim.id).map(e => (e.of === victim.id ? { ...e, of: victim.of } : e))
+  }
+  const linked = () => new Set(out.map(e => e.of).filter((x): x is string => x !== null))
+  for (const pass of ['leaf', 'any'] as const) {
+    for (const e of [...out]) {
+      if (out.length <= MAX_ENTRIES) return out
+      if (!isSettled(e.status) || e.id === goal?.id) continue
+      if (pass === 'leaf' && linked().has(e.id)) continue
+      drop(e)
     }
-    return true
-  })
+  }
+  for (const e of [...out]) {
+    if (out.length <= HARD_MAX_ENTRIES) break
+    if (e.id !== goal?.id) drop(e)
+  }
+  return out
 }
 
 /** The user's mark from the pane. */
@@ -388,7 +434,7 @@ export function syncTodos(meta: Meta, entries: Entry[], todos: Todo[], stamp: St
     const ref = `todo:${text}`
     seen.add(ref)
     const status = TODO_STATUS[t.status] ?? 'open'
-    const i = list.findIndex(e => e.ref === ref)
+    const i = list.findIndex(e => e.ref === ref && e.who === stamp.who)
     const cur = i >= 0 ? list[i] : undefined
     if (cur) {
       if (cur.status !== status) {
@@ -397,7 +443,7 @@ export function syncTodos(meta: Meta, entries: Entry[], todos: Todo[], stamp: St
       }
       continue
     }
-    const next = nextId(m, 'step')
+    const next = nextId(m, 'step', list)
     m = next.meta
     list.push({ id: next.id, kind: 'step', text, why: '', confidence: null, status, source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null, closedTurn: null })
     moved += 1
@@ -416,7 +462,7 @@ export function syncTodos(meta: Meta, entries: Entry[], todos: Todo[], stamp: St
 export function addTask(meta: Meta, entries: Entry[], taskId: string, subject: string, stamp: Stamp): { meta: Meta; entries: Entry[] } {
   const ref = `task:${taskId}`
   if (entries.some(e => e.ref === ref)) return { meta, entries }
-  const next = nextId(meta, 'step')
+  const next = nextId(meta, 'step', entries)
   const entry: Entry = { id: next.id, kind: 'step', text: clean(subject), why: '', confidence: null, status: 'open', source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null, closedTurn: null }
   return { meta: next.meta, entries: [...entries, entry] }
 }
@@ -482,6 +528,9 @@ export const GRAPH_MAX_DEPTH = 4
 /** Above this many nodes, fully finished branches fold into one line. */
 export const GRAPH_COLLAPSE_AT = 12
 
+/** The most nodes drawn; past it, the least important leaves fold into their parent's `(+n)`. */
+export const GRAPH_MAX_NODES = 30
+
 /**
  * The goal's tree: steps hang off the goal (or the step they name in `of`); assumptions, decisions,
  * findings, questions and risks hang off whatever they name in `of`. Entries that name nothing
@@ -540,18 +589,46 @@ export function buildGraph(entries: Entry[], collapse = true): GraphNode[] {
     n.children.forEach(fold)
   }
   if (collapse && roots.reduce((a, r) => a + count(r), 0) > GRAPH_COLLAPSE_AT) roots.forEach(fold)
+  if (collapse) limitTree(roots, GRAPH_MAX_NODES)
   return roots
 }
 
-/** Live entries the tree does not reach: the agent did not link them to anything. */
-export function unlinkedCount(entries: Entry[]): number {
-  const inTree = new Set<string>()
-  const walk = (n: GraphNode) => {
-    inTree.add(n.entry.id)
-    n.children.forEach(walk)
+/**
+ * Trim a tree to `max` nodes by folding leaves into their parent's `hidden` count, last first, leaving
+ * the path to the active step and the path to an invalidated assumption for last.
+ */
+export function limitTree(roots: GraphNode[], max: number): void {
+  const flat = (): { node: GraphNode; parent: GraphNode | null }[] => {
+    const out: { node: GraphNode; parent: GraphNode | null }[] = []
+    const walk = (n: GraphNode, parent: GraphNode | null) => {
+      out.push({ node: n, parent })
+      n.children.forEach(c => walk(c, n))
+    }
+    roots.forEach(r => walk(r, null))
+    return out
   }
-  buildGraph(entries, false).forEach(walk)
-  return entries.filter(e => e.kind !== 'goal' && e.status !== 'dropped' && !inTree.has(e.id)).length
+  for (let all = flat(); all.length > max; all = flat()) {
+    const leaves = all.filter(x => x.parent !== null && x.node.children.length === 0 && !x.node.onPath)
+    const pick = [...leaves].reverse().find(x => !x.node.onDamage) ?? leaves[leaves.length - 1]
+    if (!pick || !pick.parent) return
+    pick.parent.children = pick.parent.children.filter(c => c !== pick.node)
+    pick.parent.hidden += 1 + pick.node.hidden
+  }
+}
+
+/** Live entries with no route up to the goal: the agent did not link them to anything. Depth caps and folds do not count. */
+export function unlinkedCount(entries: Entry[]): number {
+  const goal = currentGoal(entries)
+  const live = entries.filter(e => e.kind !== 'goal' && e.status !== 'dropped')
+  const byId = new Map(live.map(e => [e.id, e]))
+  const linked = (e: Entry, seen: Set<string>): boolean => {
+    if (seen.has(e.id)) return false
+    seen.add(e.id)
+    if (e.of && e.of === goal?.id) return true
+    const parent = e.of ? byId.get(e.of) : undefined
+    return parent ? linked(parent, seen) : e.kind === 'step'
+  }
+  return live.filter(e => !linked(e, new Set())).length
 }
 
 /** `⚠A1,A2` for a node touched by invalidated assumptions (two shown, then `+`), or ''. */
@@ -578,7 +655,7 @@ export function graphGlyph(e: Entry): string {
 }
 
 /** The tree flattened to lines, each with its box-drawing prefix, capped at `max` lines. */
-export function graphLines(roots: GraphNode[], max = 24): GraphLine[] {
+export function graphLines(roots: GraphNode[], max = GRAPH_MAX_NODES): GraphLine[] {
   const out: GraphLine[] = []
   const walk = (n: GraphNode, lead: string, isLast: boolean, isRoot: boolean) => {
     out.push({ prefix: isRoot ? '' : lead + (isLast ? '└─ ' : '├─ '), glyph: graphGlyph(n.entry), entry: n.entry, tag: touchedTag(n.touched), onPath: n.onPath, hidden: n.hidden })
@@ -644,14 +721,15 @@ export function buildHistory(entries: Entry[], currentTurn: number, maxTurns = 1
 /** `text` cut or padded to exactly `width` cells. */
 export function fitText(text: string, width: number): string {
   if (width <= 0) return ''
-  return text.length > width ? `${text.slice(0, Math.max(0, width - 1))}…` : text.padEnd(width)
+  const cut = clip(text, width)
+  return cut.padEnd(width + (cut.length - Array.from(cut).length))
 }
 
 // ---------------------------------------------------------------- SVG for the remote surfaces
 
 /** Escape text for SVG/XML. */
 export function esc(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  return stripUnsafe(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 // Each SVG carries its own dark card, so contrast never depends on how a surface themes or scales it.
@@ -673,7 +751,7 @@ function statusColor(status: Status, p: Palette): string {
 export type GraphItem = { entry: Entry; depth: number; row: number; parentRow: number | null; node: GraphNode }
 
 /** The tree flattened to rows with their depth and their parent's row, capped at `max` rows. */
-export function graphLayout(roots: GraphNode[], max = 40): GraphItem[] {
+export function graphLayout(roots: GraphNode[], max = GRAPH_MAX_NODES): GraphItem[] {
   const out: GraphItem[] = []
   const walk = (n: GraphNode, depth: number, parentRow: number | null) => {
     if (out.length >= max) return
@@ -687,7 +765,7 @@ export function graphLayout(roots: GraphNode[], max = 40): GraphItem[] {
 
 /** Alt text for the structure SVG: each entry with its kind, parent and status. */
 export function graphAlt(roots: GraphNode[], unlinked = 0): string {
-  const items = graphLayout(roots)
+  const items = graphLayout(roots, 400)
   const rows = items.map(it => {
     const parent = it.parentRow === null ? null : items[it.parentRow]?.entry.id
     const hit = it.node.touched.length > 0 ? `, affected by invalidated ${it.node.touched.join(' and ')}` : ''
@@ -728,7 +806,7 @@ export function graphSvg(roots: GraphNode[], width = SVG_WIDTH, pal: Palette = p
     const idEnd = cx + 14 + (e.id.length + 1) * 7
     const labelX = tag ? idEnd + (tag.length + 1) * 7 : idEnd
     const room = Math.max(6, Math.floor((width - labelX - 12) / 7) - extra.length)
-    const label = e.text.length > room ? `${e.text.slice(0, Math.max(1, room - 1))}…` : e.text
+    const label = clip(e.text, room)
     const dim = (e.status === 'done' || e.status === 'confirmed' || e.status === 'dropped') && !it.node.onPath
     const fill = statusColor(e.status, pal)
     // A ring marks the path from the goal to the step being worked on.
@@ -773,7 +851,7 @@ export function historySvg(history: History, pal: Palette = paletteOf(DEFAULT_PA
       if (c.trim() !== '') last = i
     })
     const room = Math.floor((LABEL - 12) / 7) - e.id.length - 1
-    const text = e.text.length > room ? `${e.text.slice(0, Math.max(1, room - 1))}…` : e.text
+    const text = clip(e.text, room)
     parts.push(`<text class="t" x="4" y="${cy + 4}">${esc(e.id)}</text><text class="${settled ? 'd' : 't'}" x="${4 + (e.id.length + 1) * 7}" y="${cy + 4}">${esc(text)}</text>`)
     if (first < 0) return
     if (last > first) parts.push(`<line class="e" x1="${cx(first)}" y1="${cy}" x2="${cx(last)}" y2="${cy}"/>`)
@@ -812,12 +890,13 @@ export function statusLine(entries: Entry[], turn: number, staleAfter: number): 
 }
 
 /** What the ledger tool answers: what was recorded, and what is still open, so the agent can reconcile. */
-export function toolReply(applied: Applied, entries: Entry[]): string {
+/** `since`: marks the user made before this time were already reported on an earlier call (a mark in the same millisecond as that call is reported once more). */
+export function toolReply(applied: Applied, entries: Entry[], since = 0): string {
   const lines: string[] = []
   if (applied.added.length > 0) lines.push(`Logged ${applied.added.map(e => e.id).join(', ')}.`)
   if (applied.changed.length > 0) lines.push(`Updated ${applied.changed.map(c => `${c.entry.id} → ${c.entry.status}`).join(', ')}.`)
   if (applied.problems.length > 0) lines.push(`Not recorded: ${applied.problems.join('; ')}.`)
-  const byYou = entries.filter(e => e.resolvedBy === 'you')
+  const byYou = entries.filter(e => e.resolvedBy === 'you' && e.updatedAt >= since)
   if (byYou.length > 0) lines.push(`Marked by the user in the pane: ${byYou.map(e => `${e.id} ${e.status} ("${shorten(e.text, 60)}")`).join('; ')}.`)
   const open = entries.filter(e => e.kind === 'assumption' && e.status === 'open')
   if (open.length > 0) lines.push(`Open assumptions: ${open.map(e => `${e.id} ${shorten(e.text, 60)}`).join('; ')}.`)
