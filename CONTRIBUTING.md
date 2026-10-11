@@ -29,6 +29,8 @@ The ledger is built only from what the agent states openly. It must not read hid
 
 ## Pull requests
 
+`main` is protected: open a pull request from a branch; it merges by squash once the `manifests` check passes and conversations are resolved.
+
 - New behaviour in `core.ts` gets a pure test; tool and pane wiring gets an engine test.
 - Run `claude plugin validate .` and `claude plugin test .` first.
 - Update README and CHANGELOG when behaviour or options change, and bump `version` in `plugin.json`: installed copies are cached by version, so an unbumped change never reaches an update.

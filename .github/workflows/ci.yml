@@ -5,11 +5,18 @@ on:
   push: { branches: [main] }
   pull_request:
 
+# The workflow only reads the repository.
+permissions:
+  contents: read
+
 jobs:
   manifests:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - name: JSON manifests parse
         run: |
           for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
