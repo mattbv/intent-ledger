@@ -98,6 +98,7 @@ export function normalizeEntry(x: unknown): Entry | null {
     resolvedBy: e.resolvedBy === 'agent' || e.resolvedBy === 'you' || e.resolvedBy === 'observed' ? e.resolvedBy : null,
     ref: typeof e.ref === 'string' ? e.ref : null,
     of: typeof e.of === 'string' && e.of !== e.id ? e.of : null,
+    closedTurn: typeof e.closedTurn === 'number' ? e.closedTurn : null,
   }
 }
 
@@ -294,6 +295,7 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
       resolvedBy: null,
       ref: null,
       of: null,
+      closedTurn: null,
     }
     if (item.of) {
       const at = /^@(\d+)$/.exec(item.of)
@@ -391,7 +393,7 @@ export function syncTodos(meta: Meta, entries: Entry[], todos: Todo[], stamp: St
     }
     const next = nextId(m, 'step')
     m = next.meta
-    list.push({ id: next.id, kind: 'step', text, why: '', confidence: null, status, source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null })
+    list.push({ id: next.id, kind: 'step', text, why: '', confidence: null, status, source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null, closedTurn: null })
     moved += 1
   }
   list = list.map(e =>
@@ -409,7 +411,7 @@ export function addTask(meta: Meta, entries: Entry[], taskId: string, subject: s
   const ref = `task:${taskId}`
   if (entries.some(e => e.ref === ref)) return { meta, entries }
   const next = nextId(meta, 'step')
-  const entry: Entry = { id: next.id, kind: 'step', text: clean(subject), why: '', confidence: null, status: 'open', source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null }
+  const entry: Entry = { id: next.id, kind: 'step', text: clean(subject), why: '', confidence: null, status: 'open', source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null, closedTurn: null }
   return { meta: next.meta, entries: [...entries, entry] }
 }
 
@@ -507,6 +509,64 @@ export function graphLines(roots: GraphNode[], max = 24): GraphLine[] {
   }
   roots.forEach(r => walk(r, '', true, true))
   return out.slice(0, max)
+}
+
+// ---------------------------------------------------------------- execution over time
+
+const SETTLED: ReadonlySet<Status> = new Set(['done', 'confirmed', 'invalidated', 'answered', 'dropped'])
+
+export function isSettled(status: Status): boolean {
+  return SETTLED.has(status)
+}
+
+/** Stamp the turn an entry settled in, and clear it when one is reopened. `next` is `prev` after a reducer ran. */
+export function withClosedTurns(prev: Entry[], next: Entry[], turn: number): Entry[] {
+  const before = new Map(prev.map(e => [e.id, e]))
+  return next.map(e => {
+    const was = before.get(e.id)
+    if (!isSettled(e.status)) return e.closedTurn === null ? e : { ...e, closedTurn: null }
+    if (was && was.status === e.status) return e
+    return { ...e, closedTurn: turn }
+  })
+}
+
+export type HistoryRow = { entry: Entry; cells: string[] }
+export type History = { turns: number[]; rows: HistoryRow[] }
+
+export const HISTORY_CELL = 3
+
+/** The glyph an entry ends on: settled well, wrong, or dropped. */
+export function endGlyph(status: Status): string {
+  return status === 'invalidated' ? '✗' : status === 'dropped' ? '×' : '✓'
+}
+
+/**
+ * A grid of entries (rows) against turns (columns): `○` the turn it was logged, `───` while it stayed
+ * open, `✓` `✗` `×` the turn it settled. The last `maxTurns` turns and the last `maxRows` entries show.
+ */
+export function buildHistory(entries: Entry[], currentTurn: number, maxTurns = 12, maxRows = 14): History {
+  const rows = entries.filter(e => e.kind !== 'goal')
+  const last = Math.max(currentTurn, ...rows.map(e => e.turn), 1)
+  const first = Math.max(1, last - Math.max(1, maxTurns) + 1)
+  const turns: number[] = []
+  for (let t = first; t <= last; t++) turns.push(t)
+  const pad = (s: string) => ` ${s} `.slice(0, HISTORY_CELL).padEnd(HISTORY_CELL)
+  const cell = (e: Entry, t: number): string => {
+    const born = Math.max(e.turn, 1)
+    const end = isSettled(e.status) ? Math.max(e.closedTurn ?? born, born) : null
+    if (t < born || (end !== null && t > end)) return ' '.repeat(HISTORY_CELL)
+    if (end !== null && t === end) return pad(endGlyph(e.status))
+    if (t === born) return pad('○')
+    return '─'.repeat(HISTORY_CELL)
+  }
+  const shown = rows.filter(e => (isSettled(e.status) ? Math.max(e.closedTurn ?? e.turn, e.turn) : last) >= first).slice(-maxRows)
+  return { turns, rows: shown.map(entry => ({ entry, cells: turns.map(t => cell(entry, t)) })) }
+}
+
+/** `text` cut or padded to exactly `width` cells. */
+export function fitText(text: string, width: number): string {
+  if (width <= 0) return ''
+  return text.length > width ? `${text.slice(0, Math.max(0, width - 1))}…` : text.padEnd(width)
 }
 
 export function activeStep(entries: Entry[]): Entry | null {

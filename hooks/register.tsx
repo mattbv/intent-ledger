@@ -7,6 +7,7 @@ import {
   DEFAULT_META,
   DEFAULT_TURN,
   DEFAULT_VIEW,
+  HISTORY_CELL,
   INSTRUCTIONS,
   PLUGIN,
   SCHEMA_VERSION,
@@ -20,9 +21,11 @@ import {
   applyCall,
   baseName,
   buildGraph,
+  buildHistory,
   clean,
   countsOf,
   currentGoal,
+  fitText,
   graphLines,
   isStale,
   listOf,
@@ -44,6 +47,7 @@ import {
   toMarkdown,
   toolReply,
   updateTask,
+  withClosedTurns,
 } from './core'
 import type { Config, Stamp, Todo } from './core'
 
@@ -181,7 +185,7 @@ export const register: Register = (on, options) => {
     const [m, list] = await Promise.all([getMeta($), getEntries($)])
     const applied = applyCall(m, list, call, stamp)
     await update($, meta, () => applied.meta)
-    await update($, entries, () => applied.entries)
+    await update($, entries, () => withClosedTurns(list, applied.entries, stamp.turn))
     await note($, momentsFor(applied, stamp))
     if (applied.added.length + applied.changed.length > 0) {
       await update($, turn, t => ({ ...normalizeTurn(t), logged: normalizeTurn(t).logged + 1 }))
@@ -222,7 +226,7 @@ export const register: Register = (on, options) => {
       const [m, list] = await Promise.all([getMeta($), getEntries($)])
       const synced = syncTodos(m, list, listOf<Todo>(input.todos), stamp)
       await update($, meta, () => synced.meta)
-      await update($, entries, () => synced.entries)
+      await update($, entries, () => withClosedTurns(list, synced.entries, stamp.turn))
       if (synced.summary) await note($, [moment(stamp, synced.summary, 'info')])
       await refreshStatus($, cfg)
     } else if (name === 'TaskCreate') {
@@ -232,13 +236,14 @@ export const register: Register = (on, options) => {
         const [m, list] = await Promise.all([getMeta($), getEntries($)])
         const added = addTask(m, list, task.id, String(task.subject ?? input.subject ?? ''), stamp)
         await update($, meta, () => added.meta)
-        await update($, entries, () => added.entries)
+        await update($, entries, () => withClosedTurns(list, added.entries, stamp.turn))
         await refreshStatus($, cfg)
       }
     } else if (name === 'TaskUpdate' && typeof input.taskId === 'string') {
       const at = await $.clock.now()
       const patch = { status: typeof input.status === 'string' ? input.status : undefined, subject: typeof input.subject === 'string' ? input.subject : undefined }
-      await update($, entries, list => updateTask(normalizeEntries(list), input.taskId as string, patch, at))
+      const turnNow = (await getTurn($)).n
+      await update($, entries, list => withClosedTurns(normalizeEntries(list), updateTask(normalizeEntries(list), input.taskId as string, patch, at), turnNow))
       await refreshStatus($, cfg)
     } else if (name === 'ExitPlanMode') {
       const text = (ran.result as { plan?: unknown } | undefined)?.plan
@@ -298,8 +303,8 @@ export const register: Register = (on, options) => {
       const res = markByYou(cur, id, status, at)
       if (!res.entry) return
       const hit: Entry = res.entry
-      await update($, entries, () => res.entries)
       const turnNow = (await getTurn($)).n
+      await update($, entries, () => withClosedTurns(cur, res.entries, turnNow))
       await note($, [moment({ at, turn: turnNow, who: 'you' }, `marked ${hit.id} ${hit.status}`, 'you')])
       await refreshStatus($, cfg)
       if (hit.status === 'invalidated') {
@@ -372,6 +377,8 @@ export const register: Register = (on, options) => {
     const steps = list.filter(x => x.kind === 'step' && x.status !== 'dropped')
     const stepsShown = [...steps.filter(s => s.status === 'done').slice(-2), ...steps.filter(s => s.status !== 'done')].slice(0, 10)
     const graph = graphLines(buildGraph(list))
+    const labelWidth = Math.min(24, Math.max(12, width - 12 * HISTORY_CELL - 1))
+    const history = buildHistory(list, t.n, Math.max(2, Math.min(12, Math.floor((width - labelWidth - 1) / HISTORY_CELL))))
     const decisions = list.filter(x => x.kind === 'decision' && x.status !== 'dropped').slice(-4)
     const findings = list.filter(x => x.kind === 'finding' && x.status !== 'dropped').slice(-4)
     const openQs = list.filter(x => (x.kind === 'question' || x.kind === 'risk') && x.status === 'open').slice(-5)
@@ -393,6 +400,24 @@ export const register: Register = (on, options) => {
                 <Text color={l.entry.status === 'invalidated' ? 'error' : l.entry.status === 'active' ? 'suggestion' : l.entry.kind === 'goal' ? 'claude' : undefined}>{`${l.glyph} `}</Text>
                 <Text dimColor>{`${l.entry.id} `}</Text>
                 {l.entry.text}
+              </Text>
+            ))}
+          </Box>
+        )}
+
+        {history.turns.length > 1 && history.rows.length > 1 && (
+          <Box flexDirection="column">
+            {header('HISTORY', `T${history.turns[0]}–T${history.turns[history.turns.length - 1]}`)}
+            <Text wrap="truncate-end" dimColor>
+              {fitText('', labelWidth + 1)}
+              {history.turns.map(n => String(n % 100).padStart(2).padEnd(HISTORY_CELL)).join('')}
+            </Text>
+            {history.rows.map(r => (
+              <Text wrap="truncate-end">
+                <Text dimColor>{fitText(`${r.entry.id} ${r.entry.text}`, labelWidth + 1)}</Text>
+                {r.cells.map(c => (
+                  <Text color={c.includes('✗') ? 'error' : c.includes('✓') ? 'success' : 'subtle'}>{c}</Text>
+                ))}
               </Text>
             ))}
           </Box>
