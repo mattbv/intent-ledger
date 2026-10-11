@@ -19,9 +19,11 @@ import {
   addTask,
   applyCall,
   baseName,
+  buildGraph,
   clean,
   countsOf,
   currentGoal,
+  graphLines,
   isStale,
   listOf,
   markByYou,
@@ -369,6 +371,7 @@ export const register: Register = (on, options) => {
     const shownAssumptions = assumptions.filter(a => a.status !== 'dropped').slice(0, 12)
     const steps = list.filter(x => x.kind === 'step' && x.status !== 'dropped')
     const stepsShown = [...steps.filter(s => s.status === 'done').slice(-2), ...steps.filter(s => s.status !== 'done')].slice(0, 10)
+    const graph = graphLines(buildGraph(list))
     const decisions = list.filter(x => x.kind === 'decision' && x.status !== 'dropped').slice(-4)
     const findings = list.filter(x => x.kind === 'finding' && x.status !== 'dropped').slice(-4)
     const openQs = list.filter(x => (x.kind === 'question' || x.kind === 'risk') && x.status === 'open').slice(-5)
@@ -380,6 +383,20 @@ export const register: Register = (on, options) => {
           {header('GOAL', otherGoals > 0 ? `${otherGoals} earlier` : '')}
           {goal ? <Text>{goal.text}</Text> : <Text dimColor>No goal logged yet. The agent logs one when it starts a multi-step task.</Text>}
         </Box>
+
+        {graph.length > 1 && (
+          <Box flexDirection="column">
+            {header('STRUCTURE', '')}
+            {graph.map(l => (
+              <Text wrap="truncate-end" dimColor={l.entry.status === 'done' || l.entry.status === 'confirmed'}>
+                <Text color="subtle">{l.prefix}</Text>
+                <Text color={l.entry.status === 'invalidated' ? 'error' : l.entry.status === 'active' ? 'suggestion' : l.entry.kind === 'goal' ? 'claude' : undefined}>{`${l.glyph} `}</Text>
+                <Text dimColor>{`${l.entry.id} `}</Text>
+                {l.entry.text}
+              </Text>
+            ))}
+          </Box>
+        )}
 
         <Box flexDirection="column">
           {header('ASSUMPTIONS', assumptions.length > 0 ? `${c.open} open · ${c.confirmed} ✓ · ${c.invalidated} ✗${c.stale > 0 ? ` · ${c.stale} stale` : ''}` : '')}

@@ -97,6 +97,7 @@ export function normalizeEntry(x: unknown): Entry | null {
     note: typeof e.note === 'string' ? e.note : '',
     resolvedBy: e.resolvedBy === 'agent' || e.resolvedBy === 'you' || e.resolvedBy === 'observed' ? e.resolvedBy : null,
     ref: typeof e.ref === 'string' ? e.ref : null,
+    of: typeof e.of === 'string' && e.of !== e.id ? e.of : null,
   }
 }
 
@@ -149,7 +150,7 @@ export function baseName(path: string): string {
 
 // ---------------------------------------------------------------- the ledger tool's input
 
-export type AddItem = { kind: Kind; text: string; why: string; confidence: Confidence | null }
+export type AddItem = { kind: Kind; text: string; why: string; confidence: Confidence | null; of: string | null }
 export type ResolveItem = { id: string; status: Status; note: string }
 export type ParsedCall = { add: AddItem[]; resolve: ResolveItem[]; problems: string[] }
 
@@ -174,6 +175,7 @@ export const TOOL_SCHEMA = {
           text: { type: 'string', description: 'One line, under 200 characters.' },
           why: { type: 'string', description: 'For assumptions, decisions and findings: the evidence or reason, briefly.' },
           confidence: { type: 'string', enum: [...CONFIDENCES], description: 'For assumptions: how sure you are.' },
+          of: { type: 'string', description: 'Id of an existing entry this one serves or rests on, e.g. a step of S2, an assumption or decision of S3. Steps default to the goal.' },
         },
         required: ['kind', 'text'],
       },
@@ -210,7 +212,8 @@ export function parseCall(input: unknown): ParsedCall {
       continue
     }
     const confidence = CONFIDENCES.includes(raw?.confidence as Confidence) ? (raw.confidence as Confidence) : null
-    add.push({ kind, text, why: clean(raw?.why, 300), confidence })
+    const of = clean(raw?.of, 12).toUpperCase()
+    add.push({ kind, text, why: clean(raw?.why, 300), confidence, of: of || null })
   }
   const resolve: ResolveItem[] = []
   for (const raw of listOf<Record<string, unknown>>(x.resolve)) {
@@ -285,6 +288,11 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
       note: '',
       resolvedBy: null,
       ref: null,
+      of: null,
+    }
+    if (item.of) {
+      if (list.some(e => e.id === item.of)) entry.of = item.of
+      else problems.push(`no entry ${item.of} to link ${next.id} to`)
     }
     list.push(entry)
     added.push(entry)
@@ -375,7 +383,7 @@ export function syncTodos(meta: Meta, entries: Entry[], todos: Todo[], stamp: St
     }
     const next = nextId(m, 'step')
     m = next.meta
-    list.push({ id: next.id, kind: 'step', text, why: '', confidence: null, status, source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref })
+    list.push({ id: next.id, kind: 'step', text, why: '', confidence: null, status, source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null })
     moved += 1
   }
   list = list.map(e =>
@@ -393,7 +401,7 @@ export function addTask(meta: Meta, entries: Entry[], taskId: string, subject: s
   const ref = `task:${taskId}`
   if (entries.some(e => e.ref === ref)) return { meta, entries }
   const next = nextId(meta, 'step')
-  const entry: Entry = { id: next.id, kind: 'step', text: clean(subject), why: '', confidence: null, status: 'open', source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref }
+  const entry: Entry = { id: next.id, kind: 'step', text: clean(subject), why: '', confidence: null, status: 'open', source: 'observed', who: stamp.who, turn: stamp.turn, at: stamp.at, updatedAt: stamp.at, note: '', resolvedBy: null, ref, of: null }
   return { meta: next.meta, entries: [...entries, entry] }
 }
 
@@ -432,6 +440,65 @@ export function countsOf(entries: Entry[], turn: number, staleAfter: number): Co
 export function currentGoal(entries: Entry[]): Entry | null {
   const goals = entries.filter(e => e.kind === 'goal' && e.status === 'active')
   return goals[goals.length - 1] ?? null
+}
+
+// ---------------------------------------------------------------- the structure graph
+
+export type GraphNode = { entry: Entry; children: GraphNode[] }
+
+export const GRAPH_MAX_DEPTH = 4
+
+/**
+ * The goal's tree: steps hang off the goal (or the step they name in `of`); assumptions, decisions,
+ * findings, questions and risks hang off whatever they name in `of`. Entries that name nothing
+ * appear only as steps under the goal; the rest stay in their own sections. Dropped entries and
+ * everything below them are left out. With no goal, top-level steps are the roots.
+ */
+export function buildGraph(entries: Entry[]): GraphNode[] {
+  const goal = currentGoal(entries)
+  const live = entries.filter(e => e.status !== 'dropped' && e.kind !== 'goal')
+  const byId = new Map(live.map(e => [e.id, e]))
+  const parentOf = (e: Entry): string | null => {
+    if (e.of && (byId.has(e.of) || e.of === goal?.id)) return e.of
+    return e.kind === 'step' && goal ? goal.id : null
+  }
+  const kids = new Map<string | null, Entry[]>()
+  for (const e of live) {
+    const p = parentOf(e)
+    if (p === null && e.kind !== 'step') continue
+    kids.set(p, [...(kids.get(p) ?? []), e])
+  }
+  const seen = new Set<string>()
+  const grow = (e: Entry, depth: number): GraphNode => {
+    seen.add(e.id)
+    const children = depth >= GRAPH_MAX_DEPTH ? [] : (kids.get(e.id) ?? []).filter(k => !seen.has(k.id)).map(k => grow(k, depth + 1))
+    return { entry: e, children }
+  }
+  if (goal) return [grow(goal, 0)]
+  return (kids.get(null) ?? []).map(e => grow(e, 0))
+}
+
+export type GraphLine = { prefix: string; glyph: string; entry: Entry }
+
+const GLYPH_BY_KIND: Record<Kind, string> = { goal: '◎', assumption: '?', step: '·', decision: '◇', question: '?', risk: '!', finding: '•' }
+
+export function graphGlyph(e: Entry): string {
+  if (e.kind === 'step') return e.status === 'done' ? '✓' : e.status === 'active' ? '▸' : '·'
+  if (e.kind === 'assumption') return e.status === 'confirmed' ? '✓' : e.status === 'invalidated' ? '✗' : '?'
+  if (e.kind === 'question' && e.status === 'answered') return '✓'
+  return GLYPH_BY_KIND[e.kind]
+}
+
+/** The tree flattened to lines, each with its box-drawing prefix, capped at `max` lines. */
+export function graphLines(roots: GraphNode[], max = 24): GraphLine[] {
+  const out: GraphLine[] = []
+  const walk = (n: GraphNode, lead: string, isLast: boolean, isRoot: boolean) => {
+    out.push({ prefix: isRoot ? '' : lead + (isLast ? '└─ ' : '├─ '), glyph: graphGlyph(n.entry), entry: n.entry })
+    const next = isRoot ? '' : lead + (isLast ? '   ' : '│  ')
+    n.children.forEach((c, i) => walk(c, next, i === n.children.length - 1, false))
+  }
+  roots.forEach(r => walk(r, '', true, true))
+  return out.slice(0, max)
 }
 
 export function activeStep(entries: Entry[]): Entry | null {
@@ -534,6 +601,7 @@ export const INSTRUCTIONS = [
   '- Log a decision when you choose between real alternatives, with the reason. Log open questions you are deferring or guessing on, and risks you notice.',
   '- Log a finding when you learn a fact that matters to the task and settles no assumption (a limit, a cause, a surprise), with where you saw it as `why`.',
   '- Resolve entries as you learn: confirm or invalidate assumptions (say what you found in `note`), mark steps active and done, answer questions. If the plan changes, drop the stale steps and add the new ones.',
+  '- Steps hang off the goal in the pane\'s structure tree. To show how things relate, pass `of` with the id of an entry from an earlier result: a sub-step of S2, an assumption or decision of the step that rests on it.',
   '- If you keep a todo or task list, the ledger reads it; you need not repeat those steps.',
   '- Batch entries; one short line each. Skip the ledger for one-step requests and plain conversation.',
   '- The ledger is for transparency, not a substitute for asking: when a wrong guess would be costly, ask the user.',

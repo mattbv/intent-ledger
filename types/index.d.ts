@@ -33,6 +33,8 @@ export type Entry = {
   resolvedBy: Source | null
   /** For observed steps: `todo:<content>` or `task:<id>`. */
   ref: string | null
+  /** The id of the entry this one serves or rests on (a step's goal or parent step, an assumption's step), or null. */
+  of: string | null
 }
 
 export type Tone = 'info' | 'add' | 'resolve' | 'warn' | 'you'
