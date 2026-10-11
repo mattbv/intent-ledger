@@ -73,7 +73,7 @@ T5 main changed 3 files with nothing logged (routes.ts, …)
 | **Assumptions** | each with status (`?` open, `✓` confirmed, `✗` invalidated), confidence, the turn it was logged, and a **stale** flag when it has gone unverified for N turns. Open ones sort first |
 | **Plan** | logged steps plus your agent's todo list / task list, read automatically; the plan you approved in plan mode, expandable |
 | **Decisions** | choices between alternatives, with the reason |
-| **Structure** | a tree of the goal, its steps (and sub-steps), and the assumptions, decisions, findings, questions and risks the agent linked to them with `of`. Unlinked steps hang off the goal; other unlinked entries stay in their own sections |
+| **Structure** | a tree of the goal, its steps (and sub-steps), and the assumptions, decisions, findings, questions and risks the agent linked to them with `of` (an id, or `@N` for the Nth entry of the same call). Unlinked steps hang off the goal; other unlinked entries stay in their own sections |
 | **Findings** | facts the agent learned that settle no assumption (a limit, a cause, a surprise), with where it saw them |
 | **Open questions & risks** | what the agent is deferring or guessing on |
 | **Timeline** | your prompts, every entry logged or resolved, and a warning when a turn **changed files with nothing logged** |

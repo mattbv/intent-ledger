@@ -150,7 +150,7 @@ export function baseName(path: string): string {
 
 // ---------------------------------------------------------------- the ledger tool's input
 
-export type AddItem = { kind: Kind; text: string; why: string; confidence: Confidence | null; of: string | null }
+export type AddItem = { kind: Kind; text: string; why: string; confidence: Confidence | null; of: string | null; pos: number }
 export type ResolveItem = { id: string; status: Status; note: string }
 export type ParsedCall = { add: AddItem[]; resolve: ResolveItem[]; problems: string[] }
 
@@ -175,7 +175,7 @@ export const TOOL_SCHEMA = {
           text: { type: 'string', description: 'One line, under 200 characters.' },
           why: { type: 'string', description: 'For assumptions, decisions and findings: the evidence or reason, briefly.' },
           confidence: { type: 'string', enum: [...CONFIDENCES], description: 'For assumptions: how sure you are.' },
-          of: { type: 'string', description: 'Id of an existing entry this one serves or rests on, e.g. a step of S2, an assumption or decision of S3. Steps default to the goal.' },
+          of: { type: 'string', description: 'What this entry serves or rests on: the id of an existing entry (a step of S2, an assumption of S3), or "@N" for the Nth entry of this same `add` list, counting from 1 ("@1" is the first). Steps default to the goal.' },
         },
         required: ['kind', 'text'],
       },
@@ -200,21 +200,21 @@ export function parseCall(input: unknown): ParsedCall {
   const x = (input && typeof input === 'object' ? input : {}) as { add?: unknown; resolve?: unknown }
   const problems: string[] = []
   const add: AddItem[] = []
-  for (const raw of listOf<Record<string, unknown>>(x.add)) {
+  listOf<Record<string, unknown>>(x.add).forEach((raw, index) => {
     const kind = raw?.kind as Kind
     const text = clean(raw?.text)
     if (!KINDS.includes(kind)) {
       problems.push(`unknown kind "${String(raw?.kind)}"`)
-      continue
+      return
     }
     if (!text) {
       problems.push(`a ${kind} with no text`)
-      continue
+      return
     }
     const confidence = CONFIDENCES.includes(raw?.confidence as Confidence) ? (raw.confidence as Confidence) : null
     const of = clean(raw?.of, 12).toUpperCase()
-    add.push({ kind, text, why: clean(raw?.why, 300), confidence, of: of || null })
-  }
+    add.push({ kind, text, why: clean(raw?.why, 300), confidence, of: of || null, pos: index + 1 })
+  })
   const resolve: ResolveItem[] = []
   for (const raw of listOf<Record<string, unknown>>(x.resolve)) {
     const id = clean(raw?.id, 12).toUpperCase()
@@ -267,10 +267,15 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
   const changed: { entry: Entry; from: Status }[] = []
   const problems = [...call.problems]
 
+  // `of: "@N"` names the Nth entry of this call's `add` list, so a tree can be built in one call.
+  const byPos = new Map<number, string>()
   for (const item of call.add) {
     // The same open text logged twice is one entry.
     const dup = list.find(e => e.kind === item.kind && e.text === item.text && e.status !== 'dropped')
-    if (dup) continue
+    if (dup) {
+      byPos.set(item.pos, dup.id)
+      continue
+    }
     const next = nextId(m, item.kind)
     m = next.meta
     const entry: Entry = {
@@ -291,9 +296,12 @@ export function applyCall(meta: Meta, entries: Entry[], call: ParsedCall, stamp:
       of: null,
     }
     if (item.of) {
-      if (list.some(e => e.id === item.of)) entry.of = item.of
+      const at = /^@(\d+)$/.exec(item.of)
+      const target = at ? byPos.get(Number(at[1])) : list.find(e => e.id === item.of)?.id
+      if (target && target !== entry.id) entry.of = target
       else problems.push(`no entry ${item.of} to link ${next.id} to`)
     }
+    byPos.set(item.pos, entry.id)
     list.push(entry)
     added.push(entry)
   }
@@ -601,7 +609,7 @@ export const INSTRUCTIONS = [
   '- Log a decision when you choose between real alternatives, with the reason. Log open questions you are deferring or guessing on, and risks you notice.',
   '- Log a finding when you learn a fact that matters to the task and settles no assumption (a limit, a cause, a surprise), with where you saw it as `why`.',
   '- Resolve entries as you learn: confirm or invalidate assumptions (say what you found in `note`), mark steps active and done, answer questions. If the plan changes, drop the stale steps and add the new ones.',
-  '- Steps hang off the goal in the pane\'s structure tree. To show how things relate, pass `of` with the id of an entry from an earlier result: a sub-step of S2, an assumption or decision of the step that rests on it.',
+  '- Steps hang off the goal in the pane\'s structure tree. To show how things relate, pass `of`: an id from an earlier result, or "@N" for the Nth entry of the same call ("@2" is the second), e.g. a sub-step of S2, or an assumption of the step it rests on.',
   '- If you keep a todo or task list, the ledger reads it; you need not repeat those steps.',
   '- Batch entries; one short line each. Skip the ledger for one-step requests and plain conversation.',
   '- The ledger is for transparency, not a substitute for asking: when a wrong guess would be costly, ask the user.',

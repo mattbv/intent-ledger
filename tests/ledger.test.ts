@@ -50,6 +50,29 @@ test('the structure graph hangs steps off the goal and links entries through `of
   expect(lines).toEqual(['◎ G1', '├─ · S1', '└─ · S2', '   ├─ · S3', '   └─ ? A2'])
 })
 
+test('`of: "@N"` links to an entry of the same call, even past a refused or duplicate one', async () => {
+  const a = applyCall(DEFAULT_META, [], parseCall({ add: [{ kind: 'goal', text: 'G' }, { kind: 'step', text: 'One' }], }), STAMP)
+  const b = applyCall(
+    a.meta,
+    a.entries,
+    parseCall({
+      add: [
+        { kind: 'nonsense', text: 'refused' },
+        { kind: 'step', text: 'One' },
+        { kind: 'assumption', text: 'Rests on the duplicate', of: '@2' },
+        { kind: 'step', text: 'Two' },
+        { kind: 'decision', text: 'Rests on Two', of: '@4' },
+        { kind: 'risk', text: 'Forward link', of: '@9' },
+      ],
+    }),
+    STAMP,
+  )
+  const link = (id: string) => b.entries.find(e => e.id === id)?.of
+  expect(link('A1')).toBe('S1')
+  expect(link('D1')).toBe('S2')
+  expect(b.problems.join(' ')).toContain('no entry @9')
+})
+
 test('a cycle or a dropped parent never loops or resurrects a branch', async () => {
   const a = applyCall(
     DEFAULT_META,
