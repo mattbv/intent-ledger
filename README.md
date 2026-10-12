@@ -153,6 +153,7 @@ In `/config`, or under `pluginConfigs["intent-ledger"].options` in `settings.jso
 | `palette` | `default` | `default` follows your Claude Code theme; or `catppuccin-mocha`, `catppuccin-latte`, `dracula`, `gruvbox-dark`, `tokyo-night`, `nord`, `solarized-dark`, `rose-pine`. A named palette colours the pane text with fixed hex colours and the SVGs with the palette. Colours are adjusted where needed so text, lines and status colours stay legible on the palette's own background. The pane text is drawn on your terminal's background, so use a named palette with a matching terminal theme |
 | `brandAccent` | `false` | with the `default` palette, colour the pane headers Claude orange instead of your terminal's text colour (named palettes use their own accent) |
 | `statusLine` | `true` | show the summary in the status line |
+| `motion` | `true` | show a small spinner on the active step while the agent works (terminal only; it stops when the turn ends) |
 
 ## Troubleshooting
 

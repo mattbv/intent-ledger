@@ -2,6 +2,10 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.5 was released on 2026-10-11.
 
+## [0.5.0]
+### Added
+- A `motion` option (on by default): while the agent is working, the `▸ NOW` line and the active plan step show a small spinner instead of `▸`. It moves about twice a second, only on the terminal and only while a turn runs, and stops when the turn ends. Turn it off to keep the plain marker.
+
 ## [0.4.10]
 ### Changed
 - The timeline entry for an approved plan no longer starts with the plan's `#` heading mark.

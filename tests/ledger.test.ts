@@ -36,6 +36,7 @@ import {
   fitStatus,
   graphLines,
   compactTree,
+  spinnerFrame,
   parseCall,
   statusLine,
   syncTodos,
@@ -327,6 +328,16 @@ test('the text tree drops only plain leaves above a size, and keeps what is wron
   expect(ids).toContain('A1')
   expect(ids).toContain('S3')
   expect(ids).not.toContain('Q1')
+})
+
+test('the spinner cycles through its frames, and motion is a boolean option that defaults on', async () => {
+  expect(spinnerFrame(0)).toBe('⠋')
+  expect(spinnerFrame(10)).toBe('⠋')
+  expect(spinnerFrame(-1)).toBe('⠏')
+  expect(spinnerFrame(2.9)).toBe('⠹')
+  expect(parseConfig(undefined).motion).toBe(true)
+  expect(parseConfig({ motion: false }).motion).toBe(false)
+  expect(statusText(parseConfig({ motion: false }))).toContain('motion off')
 })
 
 test('a cycle or a dropped parent never loops or resurrects a branch', async () => {
