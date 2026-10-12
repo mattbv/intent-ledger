@@ -4,7 +4,7 @@ import type { Confidence, Entry, Footprint, Kind, Meta, Moment, Source, Status, 
 
 export const SCHEMA_VERSION = 1
 /** The plugin's version; keep it equal to `version` in `.claude-plugin/plugin.json` (CI checks). */
-export const VERSION = '0.5.0'
+export const VERSION = '0.5.1'
 export const PLUGIN = 'intent-ledger'
 export const TOOL_NAME = 'ledger'
 export const TOOL = 'mcp__intent-ledger__ledger'
@@ -169,6 +169,12 @@ export function clip(s: string, n: number): string {
 export function clean(s: unknown, max = MAX_TEXT): string {
   if (typeof s !== 'string') return ''
   return clip(stripUnsafe(s.replace(/\s+/g, ' ')).trim(), max)
+}
+
+/** A prompt as the timeline shows it: the tags that wrap pasted text are dropped, the text stays. */
+export function promptLabel(text: unknown): string {
+  if (typeof text !== 'string') return ''
+  return clean(text.replace(/<[\\/]*pasted_content\b[^>]*>/gi, ' '))
 }
 
 export function shorten(s: string, n: number): string {
