@@ -302,7 +302,7 @@ test('small visuals: progress bar, activity, age, freshness, health strip and th
   expect(isFresh(list[0]!, { ...turn, startedAt: 0 })).toBe(false)
 
   const parts = healthParts({ open: 2, confirmed: 1, invalidated: 1, stale: 1, stepsDone: 2, steps: 5, questions: 1, risks: 1 })
-  expect(parts.map(p => p.text)).toEqual(['2 open', '⚠ 1 stale', '✗ 1', '✓ 1', '███░░░░░ 2/5', '1 question', '1 risk'])
+  expect(parts.map(p => p.text)).toEqual(['2 open assumptions', '⚠ 1 stale', '✗ 1', '✓ 1', '███░░░░░ 2/5', '1 question', '1 risk'])
   expect(healthParts({ open: 0, confirmed: 0, invalidated: 0, stale: 0, stepsDone: 0, steps: 0, questions: 0, risks: 0 })).toEqual([])
   expect(healthParts({ open: 0, confirmed: 0, invalidated: 0, stale: 0, stepsDone: 3, steps: 3, questions: 0, risks: 0 })[0]?.tone).toBe('success')
 
