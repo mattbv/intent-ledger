@@ -1,6 +1,6 @@
 {
   "name": "intent-ledger",
-  "version": "0.4.10",
+  "version": "0.5.0",
   "description": "Intent Ledger: a live pane of what the agent is aiming for, assuming, planning and deciding, so you can watch its intent and correct a wrong assumption early",
   "author": {
     "name": "Matheus Boni Vicari"
@@ -62,6 +62,12 @@
     "statusLine": {
       "title": "Status line",
       "description": "Show open and stale assumptions, invalidated ones, plan progress and open questions in the status line",
+      "type": "boolean",
+      "default": true
+    },
+    "motion": {
+      "title": "Motion",
+      "description": "Animate the active step with a small spinner while the agent is working (it stops when the turn ends)",
       "type": "boolean",
       "default": true
     }

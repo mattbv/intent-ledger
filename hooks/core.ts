@@ -4,7 +4,7 @@ import type { Confidence, Entry, Footprint, Kind, Meta, Moment, Source, Status, 
 
 export const SCHEMA_VERSION = 1
 /** The plugin's version; keep it equal to `version` in `.claude-plugin/plugin.json` (CI checks). */
-export const VERSION = '0.4.10'
+export const VERSION = '0.5.0'
 export const PLUGIN = 'intent-ledger'
 export const TOOL_NAME = 'ledger'
 export const TOOL = 'mcp__intent-ledger__ledger'
@@ -49,6 +49,7 @@ export type Config = {
   staleAfterTurns: number
   openOnStart: boolean
   statusLine: boolean
+  motion: boolean
   brandAccent: boolean
   palette: string
 }
@@ -59,7 +60,7 @@ export function statusText(cfg: Config): string {
   return [
     `Intent Ledger ${VERSION}`,
     `palette: ${cfg.palette}${cfg.palette === DEFAULT_PALETTE_ID ? ` (follows your Claude Code theme; brandAccent ${on(cfg.brandAccent)})` : ''}`,
-    `instructAgent ${on(cfg.instructAgent)} · observePlans ${on(cfg.observePlans)} · autoAllow ${on(cfg.autoAllow)} · statusLine ${on(cfg.statusLine)} · openOnStart ${on(cfg.openOnStart)} · stale after ${cfg.staleAfterTurns} turns`,
+    `instructAgent ${on(cfg.instructAgent)} · observePlans ${on(cfg.observePlans)} · autoAllow ${on(cfg.autoAllow)} · statusLine ${on(cfg.statusLine)} · motion ${on(cfg.motion)} · openOnStart ${on(cfg.openOnStart)} · stale after ${cfg.staleAfterTurns} turns`,
   ].join('\n')
 }
 
@@ -74,6 +75,7 @@ export function parseConfig(options: Record<string, unknown> | undefined): Confi
     staleAfterTurns: stale,
     openOnStart: bool('openOnStart', true),
     statusLine: bool('statusLine', true),
+    motion: bool('motion', true),
     brandAccent: bool('brandAccent', false),
     palette: typeof o.palette === 'string' && PALETTE_IDS.includes(o.palette.trim().toLowerCase()) ? o.palette.trim().toLowerCase() : DEFAULT_PALETTE_ID,
   }
@@ -500,6 +502,13 @@ export function progressBar(done: number, total: number, width = 8): string {
   const raw = Math.round((Math.max(0, done) / total) * width)
   const filled = done >= total ? width : Math.max(done > 0 ? 1 : 0, Math.min(width - 1, raw))
   return '█'.repeat(filled) + '░'.repeat(width - filled)
+}
+
+const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+/** One frame of the working spinner; `beat` is any counter. */
+export function spinnerFrame(beat: number): string {
+  return SPINNER[((Math.floor(beat) % SPINNER.length) + SPINNER.length) % SPINNER.length]!
 }
 
 /** How much happened per turn: entries logged plus entries settled in it. */

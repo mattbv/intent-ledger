@@ -39,6 +39,7 @@ import {
   fitText,
   graphLines,
   compactTree,
+  spinnerFrame,
   isStale,
   listOf,
   markByYou,
@@ -82,6 +83,15 @@ const turn = atom({ plugin: 'intent-ledger', key: 'turn' } as const, DEFAULT_TUR
 const plan = atom({ plugin: 'intent-ledger', key: 'plan' } as const, null)
 const footprint = atom({ plugin: 'intent-ledger', key: 'footprint' } as const, DEFAULT_FOOTPRINT)
 const view = atom({ plugin: 'intent-ledger', key: 'view' } as const, DEFAULT_VIEW)
+const beat = atom({ plugin: 'intent-ledger', key: 'beat' } as const, 0)
+
+// The spinner counter moves only while a turn runs, so an idle session redraws nothing.
+let ticker: { cancel: () => void } | null = null
+async function stopTicker($: EngineInterface): Promise<void> {
+  ticker?.cancel()
+  ticker = null
+  await update($, beat, () => 0)
+}
 
 const getMeta = async ($: EngineInterface): Promise<Meta> => normalizeMeta(await read($, meta))
 const getEntries = async ($: EngineInterface): Promise<Entry[]> => normalizeEntries(await read($, entries))
@@ -175,6 +185,7 @@ export const register: Register = (on, options) => {
   })
 
   on('session.end', async ($, e, next) => {
+    await stopTicker($)
     if (e.reason === 'clear') {
       await resetAll($)
       await refreshStatus($, cfg)
@@ -305,6 +316,7 @@ export const register: Register = (on, options) => {
       await note($, [moment({ at: now, turn: t.n, who: 'you' }, shorten(clean(e.text), 90), 'you')])
     }
     await refreshStatus($, cfg)
+    if (cfg.motion && !e.agentId && !ticker) ticker = $.clock.every(400, () => void update($, beat, n => (typeof n === 'number' ? n : 0) + 1))
     return next(e)
   })
 
@@ -312,6 +324,7 @@ export const register: Register = (on, options) => {
     const done = await next(e)
     if (e.agentId) return done
     const t = await getTurn($)
+    await stopTicker($)
     await update($, turn, x => ({ ...normalizeTurn(x), isRunning: false }))
     // Changes made with nothing logged are the moments a monitor most wants to see.
     if (cfg.instructAgent && t.edits.length > 0 && t.logged === 0) {
@@ -334,8 +347,11 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = els
     // Only the remote surfaces (desktop, VS Code, mobile) draw Svg; the terminal keeps the text layouts.
     const Svg = e.surface === 'terminal' ? undefined : (els as unknown as { Svg?: (props: { source: string; alt: string }) => unknown }).Svg
-    const [list, moments, t, fp, v, approved] = await Promise.all([getEntries($), getTimeline($), getTurn($), getFootprint($), getView($), getPlan($)])
+    const [list, moments, t, fp, v, approved, pulse] = await Promise.all([getEntries($), getTimeline($), getTurn($), getFootprint($), getView($), getPlan($), cfg.motion ? read($, beat) : Promise.resolve(0)])
     const width = Math.max(24, e.props.bodyColumns)
+    // The active step shows a spinner while the agent works; otherwise the plain marker.
+    const busy = cfg.motion && t.isRunning && e.surface === 'terminal'
+    const live = busy ? spinnerFrame(typeof pulse === 'number' ? pulse : 0) : '▸'
     const c = countsOf(list, t.n, cfg.staleAfterTurns)
     const goal = currentGoal(list)
     const now = activeStep(list)
@@ -380,7 +396,7 @@ export const register: Register = (on, options) => {
           <Text bold color={accent}>GOAL </Text>
           {goal ? goal.text : <Text dimColor>none logged yet</Text>}
         </Text>,
-        now ? <Text wrap="truncate-end"><Text color={K.suggestion} bold>{'▸ NOW '}</Text>{now.text}</Text> : null,
+        now ? <Text wrap="truncate-end"><Text color={K.suggestion} bold>{`${live} NOW `}</Text>{now.text}</Text> : null,
         <Text wrap="truncate-end">
           <Text color={K.warning}>{`${c.open} open`}</Text>
           <Text dimColor>{` · ${c.confirmed} ✓ · `}</Text>
@@ -491,7 +507,7 @@ export const register: Register = (on, options) => {
           {goal ? <Text>{goal.text}</Text> : <Text dimColor>No goal logged yet. The agent logs one when it starts a multi-step task.</Text>}
           {now && (
             <Text>
-              <Text color={K.suggestion} bold>{'▸ NOW '}</Text>
+              <Text color={K.suggestion} bold>{`${live} NOW `}</Text>
               {now.text}
             </Text>
           )}
@@ -523,7 +539,7 @@ export const register: Register = (on, options) => {
         {(stepsShown.length > 0 || approved) && (
           <Box flexDirection="column">
             {header('PLAN', steps.length > 0 ? `${progressBar(c.stepsDone, c.steps)} ${c.stepsDone}/${c.steps} done` : '')}
-            {stepsShown.map(s => textRow(s, s.status === 'active' ? '▸' : s.status === 'done' ? '✓' : '·', s.status === 'active' ? K.suggestion : s.status === 'done' ? K.success : K.subtle, { dim: s.status === 'done' }))}
+            {stepsShown.map(s => textRow(s, s.status === 'active' ? live : s.status === 'done' ? '✓' : '·', s.status === 'active' ? K.suggestion : s.status === 'done' ? K.success : K.subtle, { dim: s.status === 'done' }))}
             {stepsMore > 0 && <Text dimColor>{`+${stepsMore} more step${stepsMore === 1 ? '' : 's'} to do`}</Text>}
             {approved && (
               <Button key="row:plan" plain onPress={() => toggle('plan')}>

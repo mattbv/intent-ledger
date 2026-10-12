@@ -68,6 +68,8 @@ declare module 'claude-code' {
       plan: ApprovedPlan | null
       footprint: Footprint
       view: View
+      /** Spinner frame counter; moves only while a turn runs and `motion` is on. */
+      beat: number
     }
   }
 }
