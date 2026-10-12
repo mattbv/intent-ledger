@@ -36,6 +36,7 @@ import {
   withClosedTurns,
   fitStatus,
   graphLines,
+  compactTree,
   parseCall,
   statusLine,
   syncTodos,
@@ -305,7 +306,7 @@ test('small visuals: progress bar, sparkline, activity, age, freshness, health s
   expect(isFresh(list[0]!, { ...turn, startedAt: 0 })).toBe(false)
 
   const parts = healthParts({ open: 2, confirmed: 1, invalidated: 1, stale: 1, stepsDone: 2, steps: 5, questions: 1, risks: 1 })
-  expect(parts.map(p => p.text)).toEqual(['2 open', '⚠ 1 stale', '✗ 1', '✓ 1', '███░░░░░ 2/5', '? 1', '! 1'])
+  expect(parts.map(p => p.text)).toEqual(['2 open', '⚠ 1 stale', '✗ 1', '✓ 1', '███░░░░░ 2/5', '1 question', '1 risk'])
   expect(healthParts({ open: 0, confirmed: 0, invalidated: 0, stale: 0, stepsDone: 0, steps: 0, questions: 0, risks: 0 })).toEqual([])
   expect(healthParts({ open: 0, confirmed: 0, invalidated: 0, stale: 0, stepsDone: 3, steps: 3, questions: 0, risks: 0 })[0]?.tone).toBe('success')
 
@@ -313,6 +314,23 @@ test('small visuals: progress bar, sparkline, activity, age, freshness, health s
   expect(svg.match(/rx="1\.5"/g)?.length).toBe(1)
   expect(graphAlt(buildGraph(list, false), 0, new Set(['S1']))).toContain('changed this turn')
   expect(graphSvg(buildGraph(list)).match(/rx="1\.5"/g)).toBe(null)
+})
+
+test('the text tree drops only plain leaves above a size, and keeps what is wrong or on the path', async () => {
+  const build = (items: Array<Record<string, unknown>>) => applyCall(DEFAULT_META, [], parseCall({ add: items }), STAMP).entries
+  expect(compactTree(buildGraph(build([{ kind: 'goal', text: 'Ship it' }, { kind: 'assumption', text: 'Maybe' }]))).omitted).toBe(0)
+  const list = build([
+    { kind: 'goal', text: 'Ship it' },
+    ...[1, 2, 3, 4, 5].map(n => ({ kind: 'question', text: `Question ${n}`, of: '@1' })),
+    { kind: 'assumption', text: 'Wrong one', of: '@1' },
+    ...[1, 2, 3].map(n => ({ kind: 'step', text: `Step ${n}` })),
+  ]).map(e => (e.id === 'A1' ? { ...e, status: 'invalidated' as const } : e))
+  const out = compactTree(buildGraph(list))
+  expect(out.omitted).toBe(5)
+  const ids = graphLines(out.roots).map(l => l.entry.id)
+  expect(ids).toContain('A1')
+  expect(ids).toContain('S3')
+  expect(ids).not.toContain('Q1')
 })
 
 test('a cycle or a dropped parent never loops or resurrects a branch', async () => {

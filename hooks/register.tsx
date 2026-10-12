@@ -39,6 +39,7 @@ import {
   currentGoal,
   fitText,
   graphLines,
+  compactTree,
   isStale,
   listOf,
   markByYou,
@@ -438,9 +439,10 @@ export const register: Register = (on, options) => {
       const room = Math.max(8, width - x.id.length - 8)
       const line = shorten(x.text + reason, room)
       const cut = line.length < (x.text + reason).length
+      const textCut = x.text.length > room
       const head = line.slice(0, x.text.length)
       const tail = line.slice(x.text.length)
-      const metaBits = [`T${x.turn}`, x.who !== 'main' ? x.who : '', x.source === 'observed' ? 'todo' : ''].filter(Boolean).join(' · ')
+      const metaBits = [`logged T${x.turn}`, x.who !== 'main' ? `by ${x.who}` : '', x.source === 'observed' ? 'from your todo list' : ''].filter(Boolean).join(' · ')
       return (
         <Box flexDirection="column">
           <Button key={`row:${x.id}`} plain onPress={() => toggle(x.id)}>
@@ -453,7 +455,7 @@ export const register: Register = (on, options) => {
           </Button>
           {isOpen && (
             <Box flexDirection="column" paddingLeft={4}>
-              {cut && <Text>{x.text}</Text>}
+              {textCut && <Text>{x.text}</Text>}
               {x.why && <Text dimColor>why: {x.why}</Text>}
               {x.note && <Text dimColor>note: {x.note}</Text>}
               <Text color={K.subtle}>{metaBits}</Text>
@@ -468,9 +470,12 @@ export const register: Register = (on, options) => {
     const steps = list.filter(x => x.kind === 'step' && x.status !== 'dropped')
     const tree = buildGraph(list)
     const graph = graphLines(tree)
+    const compact = compactTree(tree)
+    const textGraph = graphLines(compact.roots)
     const unlinked = unlinkedCount(list)
     // With the structure tree below, the plan keeps to what is active and next; the tree holds the rest.
     const stepsShown = graph.length > 1 ? steps.filter(s => s.status !== 'done').slice(0, 3) : [...steps.filter(s => s.status === 'done').slice(-2), ...steps.filter(s => s.status !== 'done')].slice(0, 10)
+    const stepsMore = steps.filter(x => x.status !== 'done').length - stepsShown.filter(x => x.status !== 'done').length
     const timelineShown = graph.length > 1 ? moments.filter(m => m.tone !== 'add') : moments
     const labelWidth = Math.min(24, Math.max(12, width - 12 * HISTORY_CELL - 1))
     const history = buildHistory(list, t.n, Math.max(2, Math.min(12, Math.floor((width - labelWidth - 1) / HISTORY_CELL))))
@@ -520,6 +525,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column">
             {header('PLAN', steps.length > 0 ? `${progressBar(c.stepsDone, c.steps)} ${c.stepsDone}/${c.steps} done` : '')}
             {stepsShown.map(s => textRow(s, s.status === 'active' ? '▸' : s.status === 'done' ? '✓' : '·', s.status === 'active' ? K.suggestion : s.status === 'done' ? K.success : K.subtle, { dim: s.status === 'done' }))}
+            {stepsMore > 0 && <Text dimColor>{`+${stepsMore} more step${stepsMore === 1 ? '' : 's'} to do`}</Text>}
             {approved && (
               <Button key="row:plan" plain onPress={() => toggle('plan')}>
                 <Text color={K.planMode}>◆ </Text>
@@ -552,7 +558,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column">
             {header('STRUCTURE', unlinked > 0 ? `${unlinked} unlinked` : '')}
             {Svg && <Svg source={graphSvg(tree, SVG_WIDTH, pal, unlinked, freshIds)} alt={graphAlt(buildGraph(list, false), unlinked, freshIds)} />}
-            {!Svg && graph.map(l => (
+            {!Svg && textGraph.map(l => (
               <Text wrap="truncate-end" dimColor={(l.entry.status === 'done' || l.entry.status === 'confirmed') && !l.onPath} bold={l.onPath}>
                 {gut(l.entry.id)}
                 <Text color={K.subtle}>{l.prefix}</Text>
@@ -563,6 +569,7 @@ export const register: Register = (on, options) => {
                 {l.hidden > 0 && <Text dimColor>{` (+${l.hidden})`}</Text>}
               </Text>
             ))}
+            {!Svg && compact.omitted > 0 && <Text dimColor>{`+${compact.omitted} more listed in the sections above`}</Text>}
           </Box>
         )}
 

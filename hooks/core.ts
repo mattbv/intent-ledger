@@ -4,7 +4,7 @@ import type { Confidence, Entry, Footprint, Kind, Meta, Moment, Source, Status, 
 
 export const SCHEMA_VERSION = 1
 /** The plugin's version; keep it equal to `version` in `.claude-plugin/plugin.json` (CI checks). */
-export const VERSION = '0.4.6'
+export const VERSION = '0.4.7'
 export const PLUGIN = 'intent-ledger'
 export const TOOL_NAME = 'ledger'
 export const TOOL = 'mcp__intent-ledger__ledger'
@@ -536,8 +536,8 @@ export function healthParts(c: Counts): HealthPart[] {
   if (c.invalidated > 0) parts.push({ text: `✗ ${c.invalidated}`, tone: 'error' })
   if (c.confirmed > 0) parts.push({ text: `✓ ${c.confirmed}`, tone: 'success' })
   if (c.steps > 0) parts.push({ text: `${progressBar(c.stepsDone, c.steps)} ${c.stepsDone}/${c.steps}`, tone: c.stepsDone === c.steps ? 'success' : 'plain' })
-  if (c.questions > 0) parts.push({ text: `? ${c.questions}`, tone: 'warning' })
-  if (c.risks > 0) parts.push({ text: `! ${c.risks}`, tone: 'error' })
+  if (c.questions > 0) parts.push({ text: `${c.questions} ${c.questions === 1 ? 'question' : 'questions'}`, tone: 'warning' })
+  if (c.risks > 0) parts.push({ text: `${c.risks} ${c.risks === 1 ? 'risk' : 'risks'}`, tone: 'error' })
   return parts
 }
 
@@ -713,6 +713,29 @@ export function graphGlyph(e: Entry): string {
   if (e.kind === 'assumption') return e.status === 'confirmed' ? '✓' : e.status === 'invalidated' ? '✗' : '?'
   if (e.kind === 'question' && e.status === 'answered') return '✓'
   return GLYPH_BY_KIND[e.kind]
+}
+
+const COMPACT_KINDS: ReadonlySet<Kind> = new Set(['assumption', 'question', 'risk', 'decision', 'finding'])
+
+/**
+ * A copy of the tree for the text pane, which already lists these entries in their own sections: above
+ * `keep` nodes, leaves that are only an assumption, question, risk, decision or finding drop out, unless they
+ * are wrong, damaged, on the active path or fold something. `omitted` counts what was left out.
+ */
+export function compactTree(roots: GraphNode[], keep = 8): { roots: GraphNode[]; omitted: number } {
+  const count = (n: GraphNode): number => 1 + n.children.reduce((sum, c) => sum + count(c), 0)
+  if (roots.reduce((sum, r) => sum + count(r), 0) <= keep) return { roots, omitted: 0 }
+  let omitted = 0
+  const prune = (n: GraphNode): GraphNode => {
+    const children: GraphNode[] = []
+    for (const c of n.children) {
+      const leaf = c.children.length === 0
+      if (leaf && COMPACT_KINDS.has(c.entry.kind) && c.entry.status !== 'invalidated' && c.touched.length === 0 && !c.onDamage && !c.onPath && c.hidden === 0) omitted++
+      else children.push(prune(c))
+    }
+    return { ...n, children }
+  }
+  return { roots: roots.map(prune), omitted }
 }
 
 /** The tree flattened to lines, each with its box-drawing prefix, capped at `max` lines. */
