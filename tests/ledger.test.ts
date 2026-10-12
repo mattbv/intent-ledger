@@ -281,11 +281,11 @@ test('user marks are reported once, and a big tree folds to a bound while keepin
 })
 
 test('small visuals: progress bar, sparkline, activity, age, freshness, health strip and the fresh bar in the SVG', async () => {
-  expect(progressBar(0, 5)).toBe('▱▱▱▱▱▱▱▱')
-  expect(progressBar(2, 5)).toBe('▰▰▰▱▱▱▱▱')
-  expect(progressBar(1, 100)).toBe('▰▱▱▱▱▱▱▱')
-  expect(progressBar(99, 100)).toBe('▰▰▰▰▰▰▰▱')
-  expect(progressBar(5, 5)).toBe('▰▰▰▰▰▰▰▰')
+  expect(progressBar(0, 5)).toBe('░░░░░░░░')
+  expect(progressBar(2, 5)).toBe('███░░░░░')
+  expect(progressBar(1, 100)).toBe('█░░░░░░░')
+  expect(progressBar(99, 100)).toBe('███████░')
+  expect(progressBar(5, 5)).toBe('████████')
   expect(progressBar(0, 0)).toBe('')
   expect(sparkline([0, 1, 4, 8])).toBe('·▁▄█')
   expect(sparkline([])).toBe('')
@@ -305,7 +305,7 @@ test('small visuals: progress bar, sparkline, activity, age, freshness, health s
   expect(isFresh(list[0]!, { ...turn, startedAt: 0 })).toBe(false)
 
   const parts = healthParts({ open: 2, confirmed: 1, invalidated: 1, stale: 1, stepsDone: 2, steps: 5, questions: 1, risks: 1 })
-  expect(parts.map(p => p.text)).toEqual(['2 open', '⚠ 1 stale', '✗ 1', '✓ 1', '▰▰▰▱▱▱▱▱ 2/5', '? 1', '! 1'])
+  expect(parts.map(p => p.text)).toEqual(['2 open', '⚠ 1 stale', '✗ 1', '✓ 1', '███░░░░░ 2/5', '? 1', '! 1'])
   expect(healthParts({ open: 0, confirmed: 0, invalidated: 0, stale: 0, stepsDone: 0, steps: 0, questions: 0, risks: 0 })).toEqual([])
   expect(healthParts({ open: 0, confirmed: 0, invalidated: 0, stale: 0, stepsDone: 3, steps: 3, questions: 0, risks: 0 })[0]?.tone).toBe('success')
 
@@ -438,9 +438,9 @@ test('the ledger tool records entries and the pane draws them on every surface t
     expect(drawn.indexOf('ASSUMPTIONS')).toBeLessThan(drawn.indexOf('PLAN'))
     expect(drawn.indexOf('PLAN')).toBeLessThan(drawn.indexOf('STRUCTURE'))
     expect(drawn.indexOf('STRUCTURE')).toBeLessThan(drawn.indexOf('TIMELINE'))
-    expect(drawn).toContain('press a row to confirm or correct it')
+    expect(drawn).toContain('press a row to read it in full, confirm or correct it')
     expect(drawn).toContain('1 open')
-    expect(drawn).toContain('▱')
+    expect(drawn).toContain('░')
     expect(drawn).toContain('STRUCTURE')
     // The terminal draws the tree as text; the remote surfaces draw it as an SVG.
     expect(drawn).toContain(surface === 'terminal' ? '└─' : '<svg')
@@ -535,6 +535,22 @@ test('confirming an assumption from the pane reaches the next ledger result', as
   await ui.unmount()
   const ran = await $.tool.call({ tool: TOOL, add: [{ kind: 'step', text: 'Run the suite' }] } as never)
   expect(String((ran as { result?: unknown }).result)).toContain('Marked by the user in the pane: A1 confirmed')
+})
+
+test('questions, risks, decisions, findings and steps open to their full text from the pane', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const long = 'Does the staging database allow the migration to run twice without losing rows that were written during the first attempt?'
+  await $.tool.call({ tool: TOOL, add: [{ kind: 'question', text: long }, { kind: 'risk', text: 'Short risk', why: 'seen in CI' }, { kind: 'decision', text: 'Keep the old index', why: 'a rebuild locks the table for most of the afternoon while traffic is high' }] } as never)
+  const ui = await $.ui.mount({ plugin: 'intent-ledger', surface: 'terminal', component: 'Pane', requestId: 'intent-ledger', props: { ...PANE_PROPS, bodyColumns: 40 } })
+  expect(JSON.stringify(await ui.drawn())).not.toContain(`"${long}"`)
+  await ui.press({ key: 'row:Q1' })
+  const open = JSON.stringify(await ui.drawn())
+  expect(open).toContain(`"${long}"`)
+  await ui.press({ key: 'row:D1' })
+  const second = JSON.stringify(await ui.drawn())
+  expect(second).toContain('"a rebuild locks the table for most of the afternoon while traffic is high"')
+  expect(second).not.toContain(`"${long}"`)
+  await ui.unmount()
 })
 
 test('the inline layout is a short summary', async ($, on) => {

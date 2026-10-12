@@ -4,7 +4,7 @@ import type { Confidence, Entry, Footprint, Kind, Meta, Moment, Source, Status, 
 
 export const SCHEMA_VERSION = 1
 /** The plugin's version; keep it equal to `version` in `.claude-plugin/plugin.json` (CI checks). */
-export const VERSION = '0.4.5'
+export const VERSION = '0.4.6'
 export const PLUGIN = 'intent-ledger'
 export const TOOL_NAME = 'ledger'
 export const TOOL = 'mcp__intent-ledger__ledger'
@@ -494,12 +494,12 @@ export type Counts = { open: number; confirmed: number; invalidated: number; sta
 
 // ---------------------------------------------------------------- small visuals
 
-/** `▰▰▱▱▱`: `done` of `total`, never full until it is, never empty once something is done. */
+/** `██░░░`: `done` of `total`, never full until it is, never empty once something is done. */
 export function progressBar(done: number, total: number, width = 8): string {
   if (total <= 0) return ''
   const raw = Math.round((Math.max(0, done) / total) * width)
   const filled = done >= total ? width : Math.max(done > 0 ? 1 : 0, Math.min(width - 1, raw))
-  return '▰'.repeat(filled) + '▱'.repeat(width - filled)
+  return '█'.repeat(filled) + '░'.repeat(width - filled)
 }
 
 /** `▁▃█`: one block per value, scaled to the largest; a zero is a dot. */

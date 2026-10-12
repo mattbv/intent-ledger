@@ -2,6 +2,12 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.5 was released on 2026-10-11.
 
+## [0.4.6]
+### Changed
+- Open questions, risks, decisions, findings and plan steps are now pressable rows like assumptions: a cut-off line shows `▸`, and pressing it shows the full text, the reason and note, and the turn.
+- The `▸ NOW` line and the timeline wrap instead of being cut off.
+- The progress bar uses `█`/`░` instead of `▰`/`▱`, which many terminal fonts draw too wide and leave a gap before the count.
+
 ## [0.4.5]
 ### Added
 - A health strip under the goal: open and stale assumptions, invalidated and confirmed ones, a plan progress bar, open questions and risks.
