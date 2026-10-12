@@ -27,7 +27,6 @@ import {
   healthParts,
   isFresh,
   progressBar,
-  sparkline,
   graphAlt,
   touchedTag,
   unlinkedCount,
@@ -281,16 +280,13 @@ test('user marks are reported once, and a big tree folds to a bound while keepin
   limitTree([], 1)
 })
 
-test('small visuals: progress bar, sparkline, activity, age, freshness, health strip and the fresh bar in the SVG', async () => {
+test('small visuals: progress bar, activity, age, freshness, health strip and the fresh bar in the SVG', async () => {
   expect(progressBar(0, 5)).toBe('░░░░░░░░')
   expect(progressBar(2, 5)).toBe('███░░░░░')
   expect(progressBar(1, 100)).toBe('█░░░░░░░')
   expect(progressBar(99, 100)).toBe('███████░')
   expect(progressBar(5, 5)).toBe('████████')
   expect(progressBar(0, 0)).toBe('')
-  expect(sparkline([0, 1, 4, 8])).toBe('·▁▄█')
-  expect(sparkline([])).toBe('')
-  expect(sparkline([0, 0])).toBe('··')
   expect(ageLevel(0, 3)).toBe(0)
   expect(ageLevel(2, 3)).toBe(1)
   expect(ageLevel(3, 3)).toBe(2)
