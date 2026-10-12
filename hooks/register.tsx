@@ -39,6 +39,7 @@ import {
   fitText,
   graphLines,
   compactTree,
+  promptLabel,
   spinnerFrame,
   isStale,
   listOf,
@@ -313,7 +314,7 @@ export const register: Register = (on, options) => {
     await update($, turn, t => ({ ...DEFAULT_TURN, n: normalizeTurn(t).n + 1, startedAt: now, isRunning: true }))
     if (e.text.trim()) {
       const t = await getTurn($)
-      await note($, [moment({ at: now, turn: t.n, who: 'you' }, shorten(clean(e.text), 90), 'you')])
+      await note($, [moment({ at: now, turn: t.n, who: 'you' }, shorten(promptLabel(e.text), 90), 'you')])
     }
     await refreshStatus($, cfg)
     if (cfg.motion && !e.agentId && !ticker) ticker = $.clock.every(400, () => void update($, beat, n => (typeof n === 'number' ? n : 0) + 1))

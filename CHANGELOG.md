@@ -2,6 +2,10 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.5 was released on 2026-10-11.
 
+## [0.5.1]
+### Fixed
+- The timeline no longer shows the `<pasted_content>` tags Claude Code puts around pasted text in your prompts.
+
 ## [0.5.0]
 ### Added
 - A `motion` option (on by default): while the agent is working, the `▸ NOW` line and the active plan step show a small spinner instead of `▸`. It moves about twice a second, only on the terminal and only while a turn runs, and stops when the turn ends. Turn it off to keep the plain marker.

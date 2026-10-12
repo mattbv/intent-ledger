@@ -36,6 +36,7 @@ import {
   fitStatus,
   graphLines,
   compactTree,
+  promptLabel,
   spinnerFrame,
   parseCall,
   statusLine,
@@ -338,6 +339,13 @@ test('the spinner cycles through its frames, and motion is a boolean option that
   expect(parseConfig(undefined).motion).toBe(true)
   expect(parseConfig({ motion: false }).motion).toBe(false)
   expect(statusText(parseConfig({ motion: false }))).toContain('motion off')
+})
+
+test('a prompt label drops the tags around pasted text and keeps the text', async () => {
+  expect(promptLabel('<pasted_content id="ab12">\n❯ /ledger status\n</pasted_content id="ab12">')).toBe('❯ /ledger status')
+  expect(promptLabel('see <\\pasted_content id="x"> this </\\pasted_content id="x"> please')).toBe('see this please')
+  expect(promptLabel('plain prompt')).toBe('plain prompt')
+  expect(promptLabel(undefined)).toBe('')
 })
 
 test('a cycle or a dropped parent never loops or resurrects a branch', async () => {
