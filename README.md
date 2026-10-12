@@ -189,7 +189,7 @@ claude plugin test .
 | `types/index.d.ts` | the state contract |
 | `tests/ledger.test.ts` | pure behaviour, plus the tool and pane exercised through the engine on terminal and desktop |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and the [changelog](CHANGELOG.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [code of conduct](CODE_OF_CONDUCT.md) and the [changelog](CHANGELOG.md).
 
 ## License
 

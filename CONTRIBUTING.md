@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for looking. Small fixes and focused features are welcome.
+Thanks for looking. Small fixes and focused features are welcome. Please keep to the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Setup
 
