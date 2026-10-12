@@ -125,7 +125,7 @@ Good to know:
 
 ## Privacy and reach
 
-It makes no network requests, runs no processes, reads and writes no files, and calls no model. State lives in the session and ends with it (`/clear` resets it). The things it does outside its own pane: `/ledger copy` writes the Markdown to your clipboard (or prints it), a "✗ wrong" press drafts text in your prompt box (never sent), and it shows toasts.
+It makes no network requests, runs no processes, reads and writes no files, and calls no model. State lives in the session: it is kept when you resume the session with `claude --resume`, and `/clear` resets it. The things it does outside its own pane: `/ledger copy` writes the Markdown to your clipboard (or prints it), a "✗ wrong" press drafts text in your prompt box (never sent), and it shows toasts.
 
 With `autoAllow` on, calls to its own ledger tool skip the permission prompt, including over a permission rule of yours that would ask. The tool only writes to the pane; every other tool's permissions are untouched.
 

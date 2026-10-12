@@ -2,6 +2,13 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.5 was released on 2026-10-11.
 
+## [0.4.10]
+### Changed
+- The timeline entry for an approved plan no longer starts with the plan's `#` heading mark.
+
+### Docs
+- The README and CLAUDE.md now say the ledger is kept across `claude --resume` (seen in a hand test) and reset by `/clear`.
+
 ## [0.4.9]
 ### Changed
 - An opened approved plan wraps long lines instead of cutting them, and shows its headings in bold without the `#` marks.
