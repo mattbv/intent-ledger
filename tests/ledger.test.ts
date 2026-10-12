@@ -438,7 +438,7 @@ test('the ledger tool records entries and the pane draws them on every surface t
     expect(drawn.indexOf('ASSUMPTIONS')).toBeLessThan(drawn.indexOf('PLAN'))
     expect(drawn.indexOf('PLAN')).toBeLessThan(drawn.indexOf('STRUCTURE'))
     expect(drawn.indexOf('STRUCTURE')).toBeLessThan(drawn.indexOf('TIMELINE'))
-    expect(drawn).toContain('press a row to confirm or correct it')
+    expect(drawn).toContain('press a row to read it in full, confirm or correct it')
     expect(drawn).toContain('1 open')
     expect(drawn).toContain('▱')
     expect(drawn).toContain('STRUCTURE')
@@ -535,6 +535,22 @@ test('confirming an assumption from the pane reaches the next ledger result', as
   await ui.unmount()
   const ran = await $.tool.call({ tool: TOOL, add: [{ kind: 'step', text: 'Run the suite' }] } as never)
   expect(String((ran as { result?: unknown }).result)).toContain('Marked by the user in the pane: A1 confirmed')
+})
+
+test('questions, risks, decisions, findings and steps open to their full text from the pane', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const long = 'Does the staging database allow the migration to run twice without losing rows that were written during the first attempt?'
+  await $.tool.call({ tool: TOOL, add: [{ kind: 'question', text: long }, { kind: 'risk', text: 'Short risk', why: 'seen in CI' }, { kind: 'decision', text: 'Keep the old index', why: 'a rebuild locks the table for most of the afternoon while traffic is high' }] } as never)
+  const ui = await $.ui.mount({ plugin: 'intent-ledger', surface: 'terminal', component: 'Pane', requestId: 'intent-ledger', props: { ...PANE_PROPS, bodyColumns: 40 } })
+  expect(JSON.stringify(await ui.drawn())).not.toContain(`"${long}"`)
+  await ui.press({ key: 'row:Q1' })
+  const open = JSON.stringify(await ui.drawn())
+  expect(open).toContain(`"${long}"`)
+  await ui.press({ key: 'row:D1' })
+  const second = JSON.stringify(await ui.drawn())
+  expect(second).toContain('"a rebuild locks the table for most of the afternoon while traffic is high"')
+  expect(second).not.toContain(`"${long}"`)
+  await ui.unmount()
 })
 
 test('the inline layout is a short summary', async ($, on) => {

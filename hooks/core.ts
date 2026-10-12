@@ -4,7 +4,7 @@ import type { Confidence, Entry, Footprint, Kind, Meta, Moment, Source, Status, 
 
 export const SCHEMA_VERSION = 1
 /** The plugin's version; keep it equal to `version` in `.claude-plugin/plugin.json` (CI checks). */
-export const VERSION = '0.4.5'
+export const VERSION = '0.4.6'
 export const PLUGIN = 'intent-ledger'
 export const TOOL_NAME = 'ledger'
 export const TOOL = 'mcp__intent-ledger__ledger'

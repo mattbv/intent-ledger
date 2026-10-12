@@ -431,6 +431,38 @@ export const register: Register = (on, options) => {
       )
     }
 
+    // Rows for everything but assumptions: one line when closed, the whole entry (text, reason, note) when pressed.
+    const textRow = (x: Entry, glyph: string, glyphColor: string | undefined, opts: { why?: boolean; dim?: boolean } = {}) => {
+      const isOpen = v.expanded === x.id
+      const reason = opts.why && x.why ? ` — ${x.why}` : ''
+      const room = Math.max(8, width - x.id.length - 8)
+      const line = shorten(x.text + reason, room)
+      const cut = line.length < (x.text + reason).length
+      const head = line.slice(0, x.text.length)
+      const tail = line.slice(x.text.length)
+      const metaBits = [`T${x.turn}`, x.who !== 'main' ? x.who : '', x.source === 'observed' ? 'todo' : ''].filter(Boolean).join(' · ')
+      return (
+        <Box flexDirection="column">
+          <Button key={`row:${x.id}`} plain onPress={() => toggle(x.id)}>
+            {gut(x.id)}
+            <Text color={glyphColor}>{`${glyph} `}</Text>
+            <Text dimColor>{`${x.id} `}</Text>
+            <Text dimColor={opts.dim}>{head}</Text>
+            <Text dimColor>{tail}</Text>
+            <Text color={K.subtle}>{isOpen ? '  ▾' : cut ? '  ▸' : ''}</Text>
+          </Button>
+          {isOpen && (
+            <Box flexDirection="column" paddingLeft={4}>
+              {cut && <Text>{x.text}</Text>}
+              {x.why && <Text dimColor>why: {x.why}</Text>}
+              {x.note && <Text dimColor>note: {x.note}</Text>}
+              <Text color={K.subtle}>{metaBits}</Text>
+            </Box>
+          )}
+        </Box>
+      )
+    }
+
     const assumptions = sortedAssumptions(list)
     const shownAssumptions = assumptions.filter(a => a.status !== 'dropped').slice(0, 12)
     const steps = list.filter(x => x.kind === 'step' && x.status !== 'dropped')
@@ -454,7 +486,7 @@ export const register: Register = (on, options) => {
           {header('GOAL', otherGoals > 0 ? `${otherGoals} earlier` : '')}
           {goal ? <Text>{goal.text}</Text> : <Text dimColor>No goal logged yet. The agent logs one when it starts a multi-step task.</Text>}
           {now && (
-            <Text wrap="truncate-end">
+            <Text>
               <Text color={K.suggestion} bold>{'▸ NOW '}</Text>
               {now.text}
             </Text>
@@ -472,7 +504,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           {header('ASSUMPTIONS', assumptions.length > 0 ? `${c.open} open · ${c.confirmed} ✓ · ${c.invalidated} ✗${c.stale > 0 ? ` · ${c.stale} stale` : ''}` : '')}
           {shownAssumptions.length === 0 && <Text dimColor>None logged yet. The agent adds them as it works.</Text>}
-          {c.open > 0 && v.expanded === null && <Text dimColor>press a row to confirm or correct it</Text>}
+          {c.open > 0 && v.expanded === null && <Text dimColor>press a row to read it in full, confirm or correct it</Text>}
           {shownAssumptions.map(assumptionRow)}
           {assumptions.length > shownAssumptions.length && <Text dimColor>{`+${assumptions.length - shownAssumptions.length} more (/ledger copy for all)`}</Text>}
         </Box>
@@ -480,28 +512,14 @@ export const register: Register = (on, options) => {
         {openQs.length > 0 && (
           <Box flexDirection="column">
             {header('OPEN QUESTIONS & RISKS', '')}
-            {openQs.map(q => (
-              <Text wrap="truncate-end">
-                {gut(q.id)}
-                <Text color={q.kind === 'risk' ? K.error : K.warning}>{q.kind === 'risk' ? '! ' : '? '}</Text>
-                <Text dimColor>{q.id} </Text>
-                {q.text}
-              </Text>
-            ))}
+            {openQs.map(q => textRow(q, q.kind === 'risk' ? '!' : '?', q.kind === 'risk' ? K.error : K.warning))}
           </Box>
         )}
 
         {(stepsShown.length > 0 || approved) && (
           <Box flexDirection="column">
             {header('PLAN', steps.length > 0 ? `${progressBar(c.stepsDone, c.steps)} ${c.stepsDone}/${c.steps} done` : '')}
-            {stepsShown.map(s => (
-              <Text wrap="truncate-end" dimColor={s.status === 'done'}>
-                {gut(s.id)}
-                <Text color={s.status === 'active' ? K.suggestion : s.status === 'done' ? K.success : K.subtle}>{s.status === 'active' ? '▸ ' : s.status === 'done' ? '✓ ' : '· '}</Text>
-                {s.text}
-                <Text color={K.subtle}>{s.source === 'observed' ? '  todo' : ''}</Text>
-              </Text>
-            ))}
+            {stepsShown.map(s => textRow(s, s.status === 'active' ? '▸' : s.status === 'done' ? '✓' : '·', s.status === 'active' ? K.suggestion : s.status === 'done' ? K.success : K.subtle, { dim: s.status === 'done' }))}
             {approved && (
               <Button key="row:plan" plain onPress={() => toggle('plan')}>
                 <Text color={K.planMode}>◆ </Text>
@@ -519,29 +537,14 @@ export const register: Register = (on, options) => {
         {decisions.length > 0 && (
           <Box flexDirection="column">
             {header('DECISIONS', '')}
-            {decisions.map(d => (
-              <Text wrap="truncate-end">
-                {gut(d.id)}
-                <Text dimColor>{d.id} </Text>
-                {d.text}
-                <Text dimColor>{d.why ? ` — ${d.why}` : ''}</Text>
-              </Text>
-            ))}
+            {decisions.map(d => textRow(d, '◆', K.subtle, { why: true }))}
           </Box>
         )}
 
         {findings.length > 0 && (
           <Box flexDirection="column">
             {header('FINDINGS', '')}
-            {findings.map(f => (
-              <Text wrap="truncate-end">
-                {gut(f.id)}
-                <Text color={K.subtle}>• </Text>
-                <Text dimColor>{f.id} </Text>
-                {f.text}
-                <Text dimColor>{f.why ? ` — ${f.why}` : ''}</Text>
-              </Text>
-            ))}
+            {findings.map(f => textRow(f, '•', K.subtle, { why: true }))}
           </Box>
         )}
 
@@ -592,7 +595,7 @@ export const register: Register = (on, options) => {
           {header('TIMELINE', '')}
           {moments.length === 0 && <Text dimColor>Nothing yet: your prompts and ledger changes appear here.</Text>}
           {timelineShown.slice(-10).map(m => (
-            <Text wrap="truncate-end" color={m.tone === 'warn' ? K.warning : undefined} dimColor={m.tone === 'info'}>
+            <Text color={m.tone === 'warn' ? K.warning : undefined} dimColor={m.tone === 'info'}>
               <Text dimColor>{`T${m.turn} `}</Text>
               <Text color={m.who === 'you' ? K.suggestion : K.subtle}>{`${m.who} `}</Text>
               {m.text}
