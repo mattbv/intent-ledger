@@ -291,7 +291,7 @@ export const register: Register = (on, options) => {
       if (typeof text === 'string' && text.trim()) {
         const stamp = await stampFor($, e.agentId, 'observed')
         await update($, plan, () => ({ text: text.trim(), at: stamp.at, turn: stamp.turn }))
-        await note($, [moment(stamp, `plan approved · ${clean(text.split('\n').find(l => l.trim()) ?? '', 80)}`, 'info')])
+        await note($, [moment(stamp, `plan approved · ${clean((text.split('\n').find(l => l.trim()) ?? '').replace(/^\s*#{1,6}\s+/, ''), 80)}`, 'info')])
       }
     }
     return ran
