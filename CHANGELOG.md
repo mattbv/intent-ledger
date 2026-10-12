@@ -2,6 +2,11 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.5 was released on 2026-10-11.
 
+## [0.4.9]
+### Changed
+- An opened approved plan wraps long lines instead of cutting them, and shows its headings in bold without the `#` marks.
+- The health strip says `3 open assumptions` instead of `3 open`, to tell them apart from questions and risks.
+
 ## [0.4.8]
 ### Changed
 - The History header no longer carries a sparkline. The terminal grid has a `changes` row instead, with the number of entries logged or settled in each turn.

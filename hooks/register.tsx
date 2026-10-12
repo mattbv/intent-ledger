@@ -533,7 +533,10 @@ export const register: Register = (on, options) => {
             )}
             {approved && v.expanded === 'plan' && (
               <Box paddingLeft={2} flexDirection="column">
-                {approved.text.split('\n').slice(0, 40).map(line => <Text dimColor wrap="truncate-end">{shorten(stripUnsafe(line), 200)}</Text>)}
+                {approved.text.split('\n').slice(0, 40).map(line => {
+                  const heading = /^#{1,6}\s+/.test(line)
+                  return <Text dimColor={!heading} bold={heading}>{shorten(stripUnsafe(line).replace(/^#{1,6}\s+/, ''), 400)}</Text>
+                })}
               </Box>
             )}
           </Box>

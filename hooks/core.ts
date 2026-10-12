@@ -4,7 +4,7 @@ import type { Confidence, Entry, Footprint, Kind, Meta, Moment, Source, Status, 
 
 export const SCHEMA_VERSION = 1
 /** The plugin's version; keep it equal to `version` in `.claude-plugin/plugin.json` (CI checks). */
-export const VERSION = '0.4.8'
+export const VERSION = '0.4.9'
 export const PLUGIN = 'intent-ledger'
 export const TOOL_NAME = 'ledger'
 export const TOOL = 'mcp__intent-ledger__ledger'
@@ -524,7 +524,7 @@ export type HealthPart = { text: string; tone: 'warning' | 'error' | 'success' |
 /** The one-line summary at the top of the pane; only what is non-zero. */
 export function healthParts(c: Counts): HealthPart[] {
   const parts: HealthPart[] = []
-  if (c.open > 0) parts.push({ text: `${c.open} open`, tone: 'warning' })
+  if (c.open > 0) parts.push({ text: `${c.open} open ${c.open === 1 ? 'assumption' : 'assumptions'}`, tone: 'warning' })
   if (c.stale > 0) parts.push({ text: `⚠ ${c.stale} stale`, tone: 'warning' })
   if (c.invalidated > 0) parts.push({ text: `✗ ${c.invalidated}`, tone: 'error' })
   if (c.confirmed > 0) parts.push({ text: `✓ ${c.confirmed}`, tone: 'success' })
