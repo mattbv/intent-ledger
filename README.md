@@ -42,7 +42,7 @@ GOAL
 Add OAuth login to the API
 ▸ NOW Add a passport strategy
 
-2 open · ⚠ 1 stale · ✗ 1 · ✓ 1 · ▰▰▰▱▱▱▱▱ 2/5 · ? 1 · ! 1
+2 open · ⚠ 1 stale · ✗ 1 · ✓ 1 · ███░░░░░ 2/5 · ? 1 · ! 1
 
 ASSUMPTIONS  2 open · 1 ✓ · 1 ✗ · 1 stale
 press a row to confirm or correct it
@@ -55,7 +55,7 @@ OPEN QUESTIONS & RISKS
 ? Q1 Should refresh tokens be rotated?
 ! R1 The callback URL differs between staging and prod
 
-PLAN  ▰▰▰▱▱▱▱▱ 2/5 done
+PLAN  ███░░░░░ 2/5 done
 ▸ Add a passport strategy
 · Wire the callback route
 · Write integration tests

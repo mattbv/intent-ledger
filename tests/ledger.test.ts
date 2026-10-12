@@ -281,11 +281,11 @@ test('user marks are reported once, and a big tree folds to a bound while keepin
 })
 
 test('small visuals: progress bar, sparkline, activity, age, freshness, health strip and the fresh bar in the SVG', async () => {
-  expect(progressBar(0, 5)).toBe('▱▱▱▱▱▱▱▱')
-  expect(progressBar(2, 5)).toBe('▰▰▰▱▱▱▱▱')
-  expect(progressBar(1, 100)).toBe('▰▱▱▱▱▱▱▱')
-  expect(progressBar(99, 100)).toBe('▰▰▰▰▰▰▰▱')
-  expect(progressBar(5, 5)).toBe('▰▰▰▰▰▰▰▰')
+  expect(progressBar(0, 5)).toBe('░░░░░░░░')
+  expect(progressBar(2, 5)).toBe('███░░░░░')
+  expect(progressBar(1, 100)).toBe('█░░░░░░░')
+  expect(progressBar(99, 100)).toBe('███████░')
+  expect(progressBar(5, 5)).toBe('████████')
   expect(progressBar(0, 0)).toBe('')
   expect(sparkline([0, 1, 4, 8])).toBe('·▁▄█')
   expect(sparkline([])).toBe('')
@@ -305,7 +305,7 @@ test('small visuals: progress bar, sparkline, activity, age, freshness, health s
   expect(isFresh(list[0]!, { ...turn, startedAt: 0 })).toBe(false)
 
   const parts = healthParts({ open: 2, confirmed: 1, invalidated: 1, stale: 1, stepsDone: 2, steps: 5, questions: 1, risks: 1 })
-  expect(parts.map(p => p.text)).toEqual(['2 open', '⚠ 1 stale', '✗ 1', '✓ 1', '▰▰▰▱▱▱▱▱ 2/5', '? 1', '! 1'])
+  expect(parts.map(p => p.text)).toEqual(['2 open', '⚠ 1 stale', '✗ 1', '✓ 1', '███░░░░░ 2/5', '? 1', '! 1'])
   expect(healthParts({ open: 0, confirmed: 0, invalidated: 0, stale: 0, stepsDone: 0, steps: 0, questions: 0, risks: 0 })).toEqual([])
   expect(healthParts({ open: 0, confirmed: 0, invalidated: 0, stale: 0, stepsDone: 3, steps: 3, questions: 0, risks: 0 })[0]?.tone).toBe('success')
 
@@ -440,7 +440,7 @@ test('the ledger tool records entries and the pane draws them on every surface t
     expect(drawn.indexOf('STRUCTURE')).toBeLessThan(drawn.indexOf('TIMELINE'))
     expect(drawn).toContain('press a row to read it in full, confirm or correct it')
     expect(drawn).toContain('1 open')
-    expect(drawn).toContain('▱')
+    expect(drawn).toContain('░')
     expect(drawn).toContain('STRUCTURE')
     // The terminal draws the tree as text; the remote surfaces draw it as an SVG.
     expect(drawn).toContain(surface === 'terminal' ? '└─' : '<svg')
