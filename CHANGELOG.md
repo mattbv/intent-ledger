@@ -2,6 +2,13 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.5 was released on 2026-10-11.
 
+## [0.4.7]
+### Changed
+- The Plan header is followed by `+N more steps to do` when steps are not listed.
+- The health strip says `2 questions · 1 risk` instead of `? 2 · ! 1`.
+- In the terminal, the Structure tree leaves out plain assumption, question, risk, decision and finding leaves once it passes 8 nodes (they are listed above); wrong ones, damaged branches and the active path stay.
+- An opened row no longer repeats text that already fit on its line, and its last line reads `logged T3 · by <agent>`.
+
 ## [0.4.6]
 ### Changed
 - Open questions, risks, decisions, findings and plan steps are now pressable rows like assumptions: a cut-off line shows `▸`, and pressing it shows the full text, the reason and note, and the turn.

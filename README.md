@@ -42,7 +42,7 @@ GOAL
 Add OAuth login to the API
 ▸ NOW Add a passport strategy
 
-2 open · ⚠ 1 stale · ✗ 1 · ✓ 1 · ███░░░░░ 2/5 · ? 1 · ! 1
+2 open · ⚠ 1 stale · ✗ 1 · ✓ 1 · ███░░░░░ 2/5 · 1 question · 1 risk
 
 ASSUMPTIONS  2 open · 1 ✓ · 1 ✗ · 1 stale
 press a row to confirm or correct it
