@@ -4,7 +4,7 @@ import type { Confidence, Entry, Footprint, Kind, Meta, Moment, Source, Status, 
 
 export const SCHEMA_VERSION = 1
 /** The plugin's version; keep it equal to `version` in `.claude-plugin/plugin.json` (CI checks). */
-export const VERSION = '0.4.7'
+export const VERSION = '0.4.8'
 export const PLUGIN = 'intent-ledger'
 export const TOOL_NAME = 'ledger'
 export const TOOL = 'mcp__intent-ledger__ledger'
@@ -500,13 +500,6 @@ export function progressBar(done: number, total: number, width = 8): string {
   const raw = Math.round((Math.max(0, done) / total) * width)
   const filled = done >= total ? width : Math.max(done > 0 ? 1 : 0, Math.min(width - 1, raw))
   return '█'.repeat(filled) + '░'.repeat(width - filled)
-}
-
-/** `▁▃█`: one block per value, scaled to the largest; a zero is a dot. */
-export function sparkline(values: number[]): string {
-  const max = Math.max(0, ...values)
-  const blocks = '▁▂▃▄▅▆▇█'
-  return values.map(v => (v <= 0 || max <= 0 ? '·' : blocks[Math.min(7, Math.ceil((v / max) * 8) - 1)]!)).join('')
 }
 
 /** How much happened per turn: entries logged plus entries settled in it. */

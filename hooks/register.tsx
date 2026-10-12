@@ -29,7 +29,6 @@ import {
   healthParts,
   isFresh,
   progressBar,
-  sparkline,
   unlinkedCount,
   graphSvg,
   historyAlt,
@@ -575,7 +574,7 @@ export const register: Register = (on, options) => {
 
         {history.turns.length > 1 && history.rows.length > 1 && (
           <Box flexDirection="column">
-            {header('HISTORY', `T${history.turns[0]}–T${history.turns[history.turns.length - 1]}${history.turns[0] > 1 ? ` · last ${history.turns.length}` : ''}  ${sparkline(activityByTurn(list, history.turns))}`)}
+            {header('HISTORY', `T${history.turns[0]}–T${history.turns[history.turns.length - 1]}${history.turns[0] > 1 ? ` · last ${history.turns.length}` : ''}`)}
             {Svg && <Svg source={historySvg(history, pal)} alt={historyAlt(history)} />}
             {!Svg && (
             <Text wrap="truncate-end">
@@ -584,6 +583,14 @@ export const register: Register = (on, options) => {
                 <Text dimColor={i < history.turns.length - 1} bold={i === history.turns.length - 1}>{String(n % 100).padStart(2).padEnd(HISTORY_CELL)}</Text>
               ))}
             </Text>
+            )}
+            {!Svg && (
+              <Text wrap="truncate-end">
+                <Text dimColor>{fitText('changes', labelWidth + 1)}</Text>
+                {activityByTurn(list, history.turns).map(n => (
+                  <Text dimColor>{(n > 0 ? String(Math.min(n, 99)) : '·').padStart(2).padEnd(HISTORY_CELL)}</Text>
+                ))}
+              </Text>
             )}
             {!Svg && history.rows.map(r => (
               <Text wrap="truncate-end">

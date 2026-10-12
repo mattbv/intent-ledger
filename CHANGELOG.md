@@ -2,6 +2,10 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are the `version` in `.claude-plugin/plugin.json`. Everything up to 0.4.5 was released on 2026-10-11.
 
+## [0.4.8]
+### Changed
+- The History header no longer carries a sparkline. The terminal grid has a `changes` row instead, with the number of entries logged or settled in each turn.
+
 ## [0.4.7]
 ### Changed
 - The Plan header is followed by `+N more steps to do` when steps are not listed.

@@ -85,7 +85,7 @@ T5 main changed 3 files with nothing logged (routes.ts, …)
 | **History** | entries against turns: `○` logged, `───` still open, `✓` `✗` `×` settled. Shown once there are two turns and two entries; up to 12 turns and 14 rows |
 | **Timeline** | your prompts, resolutions, warnings, and (until the tree appears) every entry logged; the latest 10. A turn that **changed files with nothing logged** raises a warning |
 
-A thin `▎` in the left gutter marks what was added or changed since your last prompt, in every list (and a bar at the edge of the SVG tree), so you can see at a glance what the last turn did. Confidence shows as a small bar (`▂ low`, `▄ medium`, `▆ high`), and an open assumption's details turn amber as it nears going stale. The History header carries a sparkline of activity per turn.
+A thin `▎` in the left gutter marks what was added or changed since your last prompt, in every list (and a bar at the edge of the SVG tree), so you can see at a glance what the last turn did. Confidence shows as a small bar (`▂ low`, `▄ medium`, `▆ high`), and an open assumption's details turn amber as it nears going stale. In the terminal, the History grid has a `changes` row with how much happened in each turn.
 
 Inline (main-screen terminal), the pane collapses to a few rows: goal, the active step, assumption counts and the latest moment. The status line reads like `ledger · 2 open assumptions · 1 stale · 1 ✗ · plan 2/5 · 1 ?`.
 
